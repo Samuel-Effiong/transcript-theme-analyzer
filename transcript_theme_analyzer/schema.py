@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 
 class Location(BaseModel):
     excerpt: str = Field(description="Short verbatim quote from the transcript, enough to locate it")
-    context_summary: str = Field(description="1-sentence description of what's happening here re: the theme")
-    char_start: int
-    char_end: int
+    context_summary: Optional[str] = Field(
+        default=None, description="1-sentence description of what's happening here re: the theme"
+    )
     timestamp: Optional[str] = None
     speaker: Optional[str] = None
 

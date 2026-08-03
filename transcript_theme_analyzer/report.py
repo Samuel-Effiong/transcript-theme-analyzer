@@ -123,8 +123,8 @@ def _render_locations_html(locations: list[dict], limit: int) -> str:
         speaker = loc.get("speaker")
         meta_bits = [b for b in (ts, speaker) if b]
         meta_str = h(" · ".join(meta_bits)) if meta_bits else ""
-        excerpt = h(loc.get("excerpt", "").replace("\n", " "))
-        summary = h(loc.get("context_summary", ""))
+        excerpt = h((loc.get("excerpt") or "").replace("\n", " "))
+        summary = h(loc.get("context_summary") or "")
         items.append(
             f"<li><span class='loc-meta'>{meta_str}</span>"
             f"<blockquote>&ldquo;{excerpt}&rdquo;</blockquote>"

@@ -28,12 +28,44 @@ def test_sustained_explicit_discussion_scores_high():
     assert score >= 75
 
 
-def test_dedupe_merges_overlapping_locations():
+def test_dedupe_merges_identical_excerpts_from_overlapping_chunks():
     locs = [
-        Location(excerpt="short", context_summary="a", char_start=100, char_end=120),
-        Location(excerpt="a much longer overlapping excerpt", context_summary="a", char_start=105, char_end=130),
-        Location(excerpt="distinct elsewhere", context_summary="b", char_start=5000, char_end=5020),
+        Location(excerpt="the grief comes in waves", context_summary="a"),
+        Location(excerpt="the grief comes in waves", context_summary="a"),
+        Location(excerpt="distinct elsewhere", context_summary="b"),
     ]
     merged = merge_and_dedupe_locations(locs)
     assert len(merged) == 2
-    assert any(loc.excerpt == "a much longer overlapping excerpt" for loc in merged)
+    assert any(loc.excerpt == "the grief comes in waves" for loc in merged)
+
+
+def test_dedupe_is_whitespace_and_case_insensitive():
+    locs = [
+        Location(excerpt="The Grief Comes In Waves"),
+        Location(excerpt="  the   grief comes in waves  "),
+    ]
+    merged = merge_and_dedupe_locations(locs)
+    assert len(merged) == 1
+
+
+def test_dedupe_keeps_the_longer_excerpt_on_match():
+    # Same passage, normalized-equal, but the raw strings differ in length
+    # (extra surrounding whitespace) -- the longer raw string is kept as the
+    # more complete capture.
+    locs = [
+        Location(excerpt="the grief comes in waves"),
+        Location(excerpt="  the grief comes in waves  "),
+    ]
+    merged = merge_and_dedupe_locations(locs)
+    assert len(merged) == 1
+    assert merged[0].excerpt == "  the grief comes in waves  "
+
+
+def test_dedupe_leaves_distinct_excerpts_unmerged():
+    locs = [
+        Location(excerpt="first distinct passage"),
+        Location(excerpt="second distinct passage"),
+        Location(excerpt="third distinct passage"),
+    ]
+    merged = merge_and_dedupe_locations(locs)
+    assert len(merged) == 3

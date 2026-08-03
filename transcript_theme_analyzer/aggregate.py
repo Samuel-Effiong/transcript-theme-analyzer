@@ -56,32 +56,35 @@ def compute_aggregate_score(
     return max(0, min(100, round(final)))
 
 
-def merge_and_dedupe_locations(
-    all_locations: list[Location], overlap_threshold: float = 0.5
-) -> list[Location]:
+def _normalize_excerpt(excerpt: str) -> str:
+    return " ".join(excerpt.split()).lower()
+
+
+def merge_and_dedupe_locations(all_locations: list[Location]) -> list[Location]:
     """Merge locations from overlapping chunk boundaries.
 
-    Locations are already translated to full-transcript char offsets by the
-    caller. Two locations are treated as duplicates of the same mention if
-    their char ranges overlap by more than `overlap_threshold` of the smaller
-    range's length -- this is what happens when the same passage falls in the
-    overlap region of two adjacent chunks and both flag it.
+    There are no character offsets to compare (removed entirely -- models
+    were unreliable about reporting them). Instead, two locations are
+    treated as duplicates of the same mention if their excerpts are
+    identical after normalizing whitespace/case -- this is what happens when
+    the same passage falls in the overlap region of two adjacent chunks and
+    both flag it, since it's literally the same source text either way.
     """
     if not all_locations:
         return []
 
-    ordered = sorted(all_locations, key=lambda loc: (loc.char_start, loc.char_end))
-    kept: list[Location] = [ordered[0]]
+    kept: list[Location] = []
+    index_by_norm: dict[str, int] = {}
 
-    for loc in ordered[1:]:
-        prev = kept[-1]
-        overlap = min(loc.char_end, prev.char_end) - max(loc.char_start, prev.char_start)
-        smaller_len = min(loc.char_end - loc.char_start, prev.char_end - prev.char_start) or 1
-        if overlap > 0 and (overlap / smaller_len) > overlap_threshold:
+    for loc in all_locations:
+        norm = _normalize_excerpt(loc.excerpt)
+        if norm in index_by_norm:
+            idx = index_by_norm[norm]
             # Keep the one with the longer excerpt (usually the more complete capture).
-            if len(loc.excerpt) > len(prev.excerpt):
-                kept[-1] = loc
+            if len(loc.excerpt) > len(kept[idx].excerpt):
+                kept[idx] = loc
             continue
+        index_by_norm[norm] = len(kept)
         kept.append(loc)
 
     return kept

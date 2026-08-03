@@ -68,7 +68,7 @@ def test_render_html_escapes_hostile_content():
     hostile = "<script>alert(1)</script>"
     transcripts = {
         hostile: [("m1", make_success(50, reasoning=hostile, locations=[
-            {"excerpt": hostile, "context_summary": hostile, "char_start": 0, "char_end": 1},
+            {"excerpt": hostile, "context_summary": hostile},
         ]))],
     }
     report = build_report("theme", transcripts)
@@ -111,6 +111,21 @@ def test_render_html_transcript_name_links_to_its_detail_section():
     html = render_html(report)
     assert 'href="#detail-1"' in html
     assert 'id="detail-1"' in html
+
+
+def test_render_html_handles_location_with_none_context_summary():
+    """context_summary is optional on Location, so a real payload can have it
+    explicitly None (not just absent) -- .get(key, "") would NOT catch that
+    (the key is present with value None), so this must not raise TypeError
+    from html.escape(None)."""
+    transcripts = {
+        "t1": [("m1", make_success(50, locations=[
+            {"excerpt": "some quote", "context_summary": None},
+        ]))],
+    }
+    report = build_report("theme", transcripts)
+    html = render_html(report)
+    assert "some quote" in html
 
 
 def test_write_html_from_data_writes_a_file(tmp_path):

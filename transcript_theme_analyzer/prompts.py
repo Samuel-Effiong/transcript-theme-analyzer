@@ -25,9 +25,8 @@ Do not invent quotes that sound plausible but are not actually present.
 score near 0, return an empty (or near-empty) locations list, and give an honest, \
 brief reasoning. Do not strain to invent a weak connection just to have something to \
 report.
-3. `char_start` / `char_end` must be offsets into the segment text you were given, \
-measured from the start of that segment (not the full transcript) -- the caller will \
-translate these into full-transcript offsets.
+3. `context_summary` is an optional, best-effort field -- include it when you can, but \
+never guess or invent a value just to fill it in.
 4. If the segment includes embedded timestamps or speaker labels, capture the ones \
 nearest each location you report in the `timestamp` / `speaker` fields. If the segment \
 has no such markers, omit those fields.

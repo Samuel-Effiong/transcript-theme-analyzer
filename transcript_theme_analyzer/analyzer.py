@@ -175,8 +175,6 @@ async def analyze_single_pass(
         Location(
             excerpt=loc.excerpt,
             context_summary=loc.context_summary,
-            char_start=loc.char_start,
-            char_end=loc.char_end,
             timestamp=loc.timestamp,
             speaker=loc.speaker,
         )
@@ -264,6 +262,17 @@ async def _synthesize_reasoning(
     return result.reasoning
 
 
+def _fill_location_defaults(loc: Location, chunk) -> Location:
+    """Fills in a location's timestamp/speaker from the chunk's nearest match
+    when the model didn't report one itself."""
+    return Location(
+        excerpt=loc.excerpt,
+        context_summary=loc.context_summary,
+        timestamp=loc.timestamp or chunk.nearest_timestamp,
+        speaker=loc.speaker or chunk.nearest_speaker,
+    )
+
+
 async def analyze_map_reduce(
     client: AsyncOpenAI,
     model: str,
@@ -285,19 +294,11 @@ async def analyze_map_reduce(
     lengths = [c.char_end - c.char_start for _, c in chunk_results]
     final_score = compute_aggregate_score(analyses, lengths)
 
-    all_locations: list[Location] = []
-    for analysis, chunk in chunk_results:
-        for loc in analysis.locations:
-            all_locations.append(
-                Location(
-                    excerpt=loc.excerpt,
-                    context_summary=loc.context_summary,
-                    char_start=chunk.char_start + loc.char_start,
-                    char_end=chunk.char_start + loc.char_end,
-                    timestamp=loc.timestamp or chunk.nearest_timestamp,
-                    speaker=loc.speaker or chunk.nearest_speaker,
-                )
-            )
+    all_locations: list[Location] = [
+        _fill_location_defaults(loc, chunk)
+        for analysis, chunk in chunk_results
+        for loc in analysis.locations
+    ]
     merged_locations = merge_and_dedupe_locations(all_locations)
 
     reasoning = await _synthesize_reasoning(
