@@ -1,0 +1,49 @@
+{
+  "theme": "resilience",
+  "relevance_score": 78,
+  "reasoning": "This segment explicitly and substantively discusses 'resilience'.",
+  "locations": [
+    {
+      "excerpt": "we're talking about resilience.\n[00:00:12] Guest: Thanks for having me",
+      "context_summary": "Direct reference to 'resilience' in context of resilience.",
+      "char_start": 50,
+      "char_end": 120,
+      "timestamp": null,
+      "speaker": null
+    },
+    {
+      "excerpt": "having me. I think resilience really comes down to how you respond af",
+      "context_summary": "Direct reference to 'resilience' in context of resilience.",
+      "char_start": 110,
+      "char_end": 180,
+      "timestamp": null,
+      "speaker": null
+    },
+    {
+      "excerpt": "aught me more about resilience than anything else.\n[00:01:05] Host: Wh",
+      "context_summary": "Direct reference to 'resilience' in context of resilience.",
+      "char_start": 512,
+      "char_end": 582,
+      "timestamp": null,
+      "speaker": null
+    }
+  ],
+  "model_used": "anthropic/claude-sonnet-5",
+  "chunked": false,
+  "_meta": {
+    "usage": {
+      "calls": 1,
+      "total_tokens": 580,
+      "by_call": [
+        {
+          "label": "single_pass",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        }
+      ]
+    },
+    "note": "Generated with a content-aware stub client (no live API key in this sandbox); demonstrates output shape and pipeline wiring, not real model judgment."
+  }
+}

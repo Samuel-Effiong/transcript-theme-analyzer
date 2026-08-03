@@ -1,0 +1,303 @@
+{
+  "theme": "grief and loss",
+  "relevance_score": 85,
+  "reasoning": "The transcript engages with 'grief and loss' unevenly: a handful of segments discuss it directly and at some emotional depth, while most of the surrounding material is unrelated small talk about business logistics. The theme is not the transcript's primary subject, but where it appears, the discussion is substantive rather than a passing mention, which keeps the score from being low.",
+  "locations": [
+    {
+      "excerpt": "how to process the grief at all, it just sat there for months.\n[",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 177,
+      "char_end": 242,
+      "timestamp": "[00:00]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "how to process the grief at all, it just sat there for months.\n[",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 1194,
+      "char_end": 1259,
+      "timestamp": "[00:00]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "thing that made the grief bearable, honestly. Silence made it wor",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 3158,
+      "char_end": 3223,
+      "timestamp": "[00:00]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "r?\n[13:25] Guest: A grief counselor once told me that loss doesn'",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 5162,
+      "char_end": 5227,
+      "timestamp": "[12:57]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "how to process the grief at all, it just sat there for months.\n[",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 6233,
+      "char_end": 6298,
+      "timestamp": "[12:57]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "thing that made the grief bearable, honestly. Silence made it wor",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 7200,
+      "char_end": 7265,
+      "timestamp": "[12:57]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "single day, and the grief comes in waves, not a straight line.\n[2",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 10062,
+      "char_end": 10127,
+      "timestamp": "[26:08]",
+      "speaker": "Guest"
+    },
+    {
+      "excerpt": "thing that made the grief bearable, honestly. Silence made it wor",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 10963,
+      "char_end": 11028,
+      "timestamp": "[26:08]",
+      "speaker": "Guest"
+    },
+    {
+      "excerpt": "mortality, and that grief lingers under everything else you do.\n[",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 11980,
+      "char_end": 12045,
+      "timestamp": "[26:08]",
+      "speaker": "Guest"
+    },
+    {
+      "excerpt": "think talking about loss openly helped, or made it harder?\n[41:2",
+      "context_summary": "Direct reference to 'loss' in context of grief and loss.",
+      "char_start": 14842,
+      "char_end": 14906,
+      "timestamp": "[39:19]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "mortality, and that grief lingers under everything else you do.\n[",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 15762,
+      "char_end": 15827,
+      "timestamp": "[39:19]",
+      "speaker": "Host"
+    },
+    {
+      "excerpt": "g.\n[52:23] Guest: A grief counselor once told me that loss doesn'",
+      "context_summary": "Direct reference to 'grief' in context of grief and loss.",
+      "char_start": 18639,
+      "char_end": 18704,
+      "timestamp": "[39:19]",
+      "speaker": "Host"
+    }
+  ],
+  "model_used": "anthropic/claude-sonnet-5",
+  "chunked": true,
+  "_meta": {
+    "usage": {
+      "calls": 27,
+      "total_tokens": 15660,
+      "by_call": [
+        {
+          "label": "chunk_0",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_1",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_2",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_3",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_4",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_5",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_6",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_7",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_8",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_9",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_10",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_11",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_12",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_13",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_14",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_15",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_16",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_17",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_18",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_19",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_20",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_21",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_22",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_23",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_24",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "chunk_25",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        },
+        {
+          "label": "synthesis",
+          "model": "anthropic/claude-sonnet-5",
+          "prompt_tokens": 400,
+          "completion_tokens": 180,
+          "total_tokens": 580
+        }
+      ]
+    },
+    "note": "Generated with a content-aware stub client (no live API key in this sandbox); demonstrates output shape and pipeline wiring, not real model judgment."
+  }
+}
