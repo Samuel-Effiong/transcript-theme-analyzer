@@ -1,6 +1,6 @@
-from transcript_theme_analyzer.analyzer import _fill_location_defaults
+from transcript_theme_analyzer.analyzer import _fill_location_defaults, _repair_parsed_json
 from transcript_theme_analyzer.chunker import Chunk
-from transcript_theme_analyzer.schema import Location
+from transcript_theme_analyzer.schema import AnalysisResult, ChunkAnalysis, Location
 
 
 def make_chunk(char_start=1000, char_end=1200, timestamp="[10:00]", speaker="Host"):
@@ -33,3 +33,56 @@ def test_fill_location_defaults_preserves_context_summary_and_excerpt():
     result = _fill_location_defaults(loc, make_chunk())
     assert result.excerpt == "the exact quote"
     assert result.context_summary == "a summary"
+
+
+def test_repair_fills_missing_required_reasoning_with_empty_string():
+    parsed = {"relevance_score": 5, "explicitness": "tangential", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    result = ChunkAnalysis.model_validate(repaired)
+    assert result.reasoning == ""
+    assert result.relevance_score == 5
+
+
+def test_repair_rounds_and_clamps_a_fractional_relevance_score():
+    parsed = {"relevance_score": 0.3, "explicitness": "tangential", "reasoning": "r", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    assert repaired["relevance_score"] == 0
+
+    parsed = {"relevance_score": 87.6, "explicitness": "explicit", "reasoning": "r", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    assert repaired["relevance_score"] == 88
+
+
+def test_repair_drops_location_entries_missing_excerpt_instead_of_failing():
+    parsed = {
+        "relevance_score": 40,
+        "explicitness": "explicit",
+        "reasoning": "r",
+        "locations": [
+            {"excerpt": "a real quote"},
+            {"context_summary": "no excerpt here, should be dropped"},
+        ],
+    }
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    result = ChunkAnalysis.model_validate(repaired)
+    assert len(result.locations) == 1
+    assert result.locations[0].excerpt == "a real quote"
+
+
+def test_repair_does_not_touch_a_fully_populated_response():
+    parsed = {"relevance_score": 42, "explicitness": "explicit", "reasoning": "solid reasoning", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    assert repaired == parsed
+
+
+def test_repair_fills_missing_reasoning_on_analysis_result_too():
+    parsed = {
+        "theme": "t",
+        "relevance_score": 10,
+        "locations": [],
+        "model_used": "m1",
+        "chunked": False,
+    }
+    repaired = _repair_parsed_json(parsed, AnalysisResult)
+    result = AnalysisResult.model_validate(repaired)
+    assert result.reasoning == ""

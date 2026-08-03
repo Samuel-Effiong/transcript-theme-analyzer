@@ -6,6 +6,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass, field
+from typing import get_origin
 
 import openai
 from openai import AsyncOpenAI
@@ -73,6 +74,49 @@ def _json_schema_for(model_cls, name: str) -> dict:
     return {"name": name, "schema": schema, "strict": True}
 
 
+def _repair_parsed_json(parsed, schema_cls):
+    """Best-effort repair of a parsed JSON object against schema_cls's
+    required fields before validation.
+
+    Models are unreliable about including every required field consistently
+    even when instructed to (missing `reasoning`, a `relevance_score` sent as
+    a fractional float, etc.) -- retrying the identical call over and over
+    just burns the retry budget on the same failure. This fills only safe,
+    non-fabricating defaults (empty string/zero/empty list) for missing
+    required fields, and coerces an out-of-range float score to the nearest
+    valid int -- it never invents substantive content like reasoning or
+    excerpts.
+    """
+    if not isinstance(parsed, dict):
+        return parsed
+    parsed = dict(parsed)
+
+    for name, field in schema_cls.model_fields.items():
+        if not field.is_required() or name in parsed:
+            continue
+        if field.annotation is str:
+            parsed[name] = ""
+        elif field.annotation is int:
+            parsed[name] = 0
+        elif get_origin(field.annotation) is list:
+            parsed[name] = []
+
+    score = parsed.get("relevance_score")
+    if isinstance(score, float):
+        parsed["relevance_score"] = max(0, min(100, round(score)))
+
+    locations = parsed.get("locations")
+    if isinstance(locations, list):
+        # `excerpt` is the one thing on Location that can't be safely
+        # defaulted (there's no non-fabricating placeholder for a quote) --
+        # drop any entry missing it rather than fail the whole response.
+        parsed["locations"] = [
+            loc for loc in locations if isinstance(loc, dict) and loc.get("excerpt")
+        ]
+
+    return parsed
+
+
 async def _call_with_retry(
     client: AsyncOpenAI,
     *,
@@ -130,6 +174,7 @@ async def _call_with_retry(
                 if content.startswith("json"):
                     content = content[4:]
             parsed = json.loads(content)
+            parsed = _repair_parsed_json(parsed, schema_cls)
             result = schema_cls.model_validate(parsed)
             return result, resp.usage
         except RETRYABLE_EXCEPTIONS as exc:
