@@ -40,8 +40,6 @@ have exactly this shape:
     {
       "excerpt": "a short verbatim quote from the segment",
       "context_summary": "one sentence describing what's happening here re: the theme",
-      "timestamp": "[12:03]",
-      "speaker": "Host"
     }
   ]
 }
@@ -60,9 +58,7 @@ is simply shorter -- for example: "The theme does not meaningfully appear in thi
 segment; it focuses on unrelated logistics." A short, honest sentence is correct; a \
 missing field is not, ever.
 - `locations`: a list, which may be empty. Each entry needs at minimum "excerpt" (a \
-verbatim substring of the segment). "context_summary", "timestamp", and "speaker" are \
-optional -- include them when you can reasonably do so, and simply omit them (never \
-guess) when you can't.
+verbatim substring of the segment). "context_summary".
 
 ## RULES
 
@@ -74,10 +70,7 @@ score near 0, set `explicitness` to "absent", return an empty (or near-empty) lo
 list -- and still write a brief, honest `reasoning` sentence. Never omit `reasoning` \
 just because the answer is short. Do not strain to invent a weak connection just to \
 have something to report.
-3. If the segment includes embedded timestamps or speaker labels, capture the ones \
-nearest each location you report in the `timestamp` / `speaker` fields. If the segment \
-has no such markers, omit those two fields only -- never omit `relevance_score`, \
-`explicitness`, or `reasoning` for any reason.
+3. Never omit `relevance_score`, `explicitness`, or `reasoning` for any reason.
 4. Output only the single JSON object described above. Nothing else, in any form.
 
 You are scoring one segment of a much larger transcript in isolation. Do not assume \
