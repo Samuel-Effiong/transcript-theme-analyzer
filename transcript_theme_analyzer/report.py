@@ -114,6 +114,15 @@ def _bar_color_var(score: int) -> str:
     return "var(--seq-300)"
 
 
+def _render_excerpt_html(excerpt: str) -> str:
+    """Renders a (possibly multi-paragraph) excerpt as one <p> per source
+    paragraph inside the blockquote, instead of flattening paragraph breaks
+    into a single run-on line."""
+    paragraphs = [p.strip() for p in excerpt.split("\n\n") if p.strip()] or [excerpt.strip()]
+    inner = "".join(f"<p>{h(p)}</p>" for p in paragraphs)
+    return f"<blockquote>{inner}</blockquote>"
+
+
 def _render_locations_html(locations: list[dict], limit: int) -> str:
     if not locations:
         return "<p class='muted'>No specific locations recorded.</p>"
@@ -123,12 +132,12 @@ def _render_locations_html(locations: list[dict], limit: int) -> str:
         speaker = loc.get("speaker")
         meta_bits = [b for b in (ts, speaker) if b]
         meta_str = h(" · ".join(meta_bits)) if meta_bits else ""
-        excerpt = h((loc.get("excerpt") or "").replace("\n", " "))
-        summary = h(loc.get("context_summary") or "")
+        title = h(loc.get("title") or "Relevant Passage")
+        excerpt_html = _render_excerpt_html(loc.get("excerpt") or "")
         items.append(
-            f"<li><span class='loc-meta'>{meta_str}</span>"
-            f"<blockquote>&ldquo;{excerpt}&rdquo;</blockquote>"
-            f"<span class='loc-summary'>{summary}</span></li>"
+            f"<li><span class='loc-title'>{title}</span>"
+            f"<span class='loc-meta'>{meta_str}</span>"
+            f"{excerpt_html}</li>"
         )
     more = len(locations) - limit
     more_note = f"<p class='muted'>+{more} more location(s).</p>" if more > 0 else ""
@@ -309,9 +318,11 @@ def render_html(report: BatchReport, top_locations: int = 5) -> str:
   .locations {{ list-style: none; padding: 0; margin: 0; }}
   .locations li {{ padding: 0.5rem 0; border-top: 1px solid var(--grid); }}
   .locations li:first-child {{ border-top: none; }}
-  .loc-meta {{ font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.2rem; }}
+  .loc-title {{ font-weight: 600; display: block; margin-bottom: 0.15rem; }}
+  .loc-meta {{ font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.3rem; }}
   blockquote {{ margin: 0.2rem 0; padding-left: 0.75rem; border-left: 2px solid var(--seq-500); color: var(--text-primary); }}
-  .loc-summary {{ font-size: 0.85rem; color: var(--text-secondary); }}
+  blockquote p {{ margin: 0 0 0.6rem; }}
+  blockquote p:last-child {{ margin-bottom: 0; }}
   .chip {{ display: inline-block; background: var(--grid); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; margin: 0 0.3rem 0.3rem 0; }}
   .other-models {{ margin: 0.5rem 0; }}
   .muted {{ color: var(--muted); font-size: 0.85rem; }}

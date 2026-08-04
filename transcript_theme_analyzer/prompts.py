@@ -17,7 +17,7 @@ semantically: a segment can be highly relevant to the theme without ever using t
 theme's exact words, and can mention the theme's words without being substantively \
 about it.
 
-For every location you report, be explicit about whether the connection is:
+For every passage you report, be explicit about whether the connection is:
 - "explicit": the segment directly and substantively discusses the theme
 - "tangential": the segment touches on the theme only in passing, implicitly, or as a \
 minor aside relative to its main subject
@@ -25,6 +25,33 @@ minor aside relative to its main subject
 Factor this distinction into both your relevance_score and your reasoning. A segment \
 dense with explicit discussion should score much higher than one with only tangential \
 references, even if both technically "mention" the theme.
+
+## HOW TO REPORT A RELEVANT PASSAGE -- THIS IS IMPORTANT
+
+Each entry in `locations` describes one CONTINUOUS passage of the segment that discusses \
+the theme -- not a single representative sentence. If the discussion of the theme runs \
+for several paragraphs without a real break in subject, that entire span is ONE location, \
+not several. Do not chop one continuous discussion into multiple small locations, and do \
+not report only a short "highlight" sentence when the surrounding paragraphs are also \
+substantively part of the same discussion.
+
+You do NOT reproduce the passage text yourself. Instead, report two short verbatim \
+phrases that mark its true boundaries:
+- `start_marker`: a short (5-12 word) verbatim phrase, copied exactly, from the very \
+first words of the passage.
+- `end_marker`: a short (5-12 word) verbatim phrase, copied exactly, from the very last \
+words of the passage.
+
+The system uses these two markers to locate and extract the exact original text between \
+them -- so each marker must be an exact phrase that actually appears at that boundary, \
+not a paraphrase or a summary of it. An inexact marker means the passage cannot be found \
+at all.
+
+Also give each passage a `title`: a short, specific, section-title-style label (2-6 \
+words, Title Case) that names what THAT passage is specifically about -- the way an \
+editor would title a section of a document. Good titles are concrete and specific, e.g. \
+"The Apostle's Call" or "Testing Apostolic Teaching" -- not generic restatements of the \
+theme itself (avoid titles like "Discussion Of The Theme").
 
 ## REQUIRED OUTPUT FORMAT -- READ CAREFULLY
 
@@ -38,8 +65,11 @@ have exactly this shape:
   "reasoning": "One or two sentences explaining the score, grounded in what this segment specifically contains.",
   "locations": [
     {
-      "excerpt": "a short verbatim quote from the segment",
-      "context_summary": "one sentence describing what's happening here re: the theme",
+      "title": "The Apostle's Call",
+      "start_marker": "a short verbatim phrase from the true start of the passage",
+      "end_marker": "a short verbatim phrase from the true end of the passage",
+      "timestamp": "[12:03]",
+      "speaker": "Host"
     }
   ]
 }
@@ -57,14 +87,17 @@ never a fraction, never a percentage string, never null.
 is simply shorter -- for example: "The theme does not meaningfully appear in this \
 segment; it focuses on unrelated logistics." A short, honest sentence is correct; a \
 missing field is not, ever.
-- `locations`: a list, which may be empty. Each entry needs at minimum "excerpt" (a \
-verbatim substring of the segment). "context_summary".
+- `locations`: a list, which may be empty. Each entry needs `start_marker` and \
+`end_marker` (both required, both exact verbatim phrases). `title`, `timestamp`, and \
+`speaker` are optional -- include them when you reasonably can, omit them (don't guess) \
+when you can't.
 
 ## RULES
 
-1. Never fabricate excerpts. Every "excerpt" must be a verbatim substring (or a very \
-close paraphrase clearly traceable to actual text) of the segment you were given. Do \
-not invent quotes that sound plausible but are not actually present.
+1. Never fabricate markers. Every `start_marker` and `end_marker` must be an exact, \
+verbatim phrase actually present at that boundary in the segment you were given -- not \
+a paraphrase, not a summary, not phrasing that sounds plausible but isn't literally \
+there.
 2. If the theme does not meaningfully appear in this segment at all, say so plainly: \
 score near 0, set `explicitness` to "absent", return an empty (or near-empty) locations \
 list -- and still write a brief, honest `reasoning` sentence. Never omit `reasoning` \

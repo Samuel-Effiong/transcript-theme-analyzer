@@ -28,7 +28,7 @@ def _headings(document, level):
 
 def test_document_title_is_the_theme():
     transcripts = {"ep1": [("m1", make_success(80, locations=[
-        {"excerpt": "e1", "context_summary": "First topic"},
+        {"excerpt": "e1", "title": "First topic"},
     ]))]}
     report = build_report("the glory of God", transcripts)
     document = build_docx(report)
@@ -38,10 +38,10 @@ def test_document_title_is_the_theme():
 def test_one_section_per_transcript_named_after_transcript():
     transcripts = {
         "Sunday Service": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
         "Leadership Conference": [("m1", make_success(70, locations=[
-            {"excerpt": "e2", "context_summary": "Topic B"},
+            {"excerpt": "e2", "title": "Topic B"},
         ]))],
     }
     report = build_report("theme", transcripts)
@@ -54,8 +54,8 @@ def test_one_section_per_transcript_named_after_transcript():
 def test_excerpt_heading_uses_context_not_the_raw_keyword():
     transcripts = {
         "ep1": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "God's Glory Revealed Through Obedience."},
-            {"excerpt": "e2", "context_summary": "The Purpose of Living for God's Glory."},
+            {"excerpt": "e1", "title": "God's Glory Revealed Through Obedience."},
+            {"excerpt": "e2", "title": "The Purpose of Living for God's Glory."},
         ]))],
     }
     report = build_report("the glory of God", transcripts)
@@ -70,9 +70,9 @@ def test_excerpt_heading_uses_context_not_the_raw_keyword():
 def test_multiple_excerpts_under_same_transcript_all_included():
     transcripts = {
         "ep1": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
-            {"excerpt": "e2", "context_summary": "Topic B"},
-            {"excerpt": "e3", "context_summary": "Topic C"},
+            {"excerpt": "e1", "title": "Topic A"},
+            {"excerpt": "e2", "title": "Topic B"},
+            {"excerpt": "e3", "title": "Topic C"},
         ]))],
     }
     report = build_report("theme", transcripts)
@@ -85,7 +85,7 @@ def test_multiple_excerpts_under_same_transcript_all_included():
 def test_transcripts_with_no_located_excerpts_are_skipped():
     transcripts = {
         "has_locations": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
         "no_locations": [("m1", make_success(50, locations=[]))],
         "all_failed": [("m1", make_error("m1"))],
@@ -99,10 +99,10 @@ def test_transcripts_with_no_located_excerpts_are_skipped():
 def test_min_score_filters_out_low_scoring_transcripts():
     transcripts = {
         "high": [("m1", make_success(90, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
         "low": [("m1", make_success(10, locations=[
-            {"excerpt": "e2", "context_summary": "Topic B"},
+            {"excerpt": "e2", "title": "Topic B"},
         ]))],
     }
     report = build_report("theme", transcripts)
@@ -118,9 +118,28 @@ def test_no_matching_transcripts_produces_a_document_without_crashing():
     assert any("No transcripts" in p.text for p in document.paragraphs)
 
 
+def test_multi_paragraph_excerpt_gets_open_quote_only_on_first_paragraph_and_close_on_last():
+    excerpt = "First paragraph of the passage.\n\nSecond paragraph.\n\nThird and final paragraph."
+    transcripts = {
+        "ep1": [("m1", make_success(80, locations=[
+            {"excerpt": excerpt, "title": "A Long Passage"},
+        ]))],
+    }
+    report = build_report("theme", transcripts)
+    document = build_docx(report)
+    body_paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
+
+    assert "“First paragraph of the passage." in body_paragraphs
+    assert "Second paragraph." in body_paragraphs
+    assert "Third and final paragraph.”" in body_paragraphs
+    # The middle paragraph carries neither a leading nor trailing quote mark.
+    assert "“Second paragraph.”" not in body_paragraphs
+    assert "“Second paragraph." not in body_paragraphs
+
+
 def test_write_docx_produces_a_valid_openable_file(tmp_path):
     transcripts = {"ep1": [("m1", make_success(80, locations=[
-        {"excerpt": "e1", "context_summary": "Topic A", "timestamp": "[01:00]", "speaker": "Host"},
+        {"excerpt": "e1", "title": "Topic A", "timestamp": "[01:00]", "speaker": "Host"},
     ]))]}
     out_path = str(tmp_path / "out.docx")
     write_docx_from_data("theme", transcripts, out_path)
@@ -133,7 +152,7 @@ def test_hostile_content_is_stored_literally_not_executed(tmp_path):
     hostile = "=cmd|' /C calc'!A1"  # CSV-injection-shaped string; docx just stores text
     transcripts = {
         "ep1": [("m1", make_success(80, locations=[
-            {"excerpt": hostile, "context_summary": hostile},
+            {"excerpt": hostile, "title": hostile},
         ]))],
     }
     out_path = str(tmp_path / "out.docx")
@@ -146,7 +165,7 @@ def test_hostile_content_is_stored_literally_not_executed(tmp_path):
 def test_overview_table_lists_every_transcript_with_its_score_in_ranked_order():
     transcripts = {
         "high": [("m1", make_success(90, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
         "no_excerpts": [("m1", make_success(50, locations=[]))],
         "failed": [("m1", make_error("m1"))],
@@ -172,7 +191,7 @@ def test_overview_table_lists_every_transcript_with_its_score_in_ranked_order():
 def test_overview_table_links_only_transcripts_with_a_detail_section():
     transcripts = {
         "has_section": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
         "no_section": [("m1", make_success(20, locations=[]))],
     }
@@ -191,7 +210,7 @@ def test_overview_table_links_only_transcripts_with_a_detail_section():
 def test_transcript_heading_carries_the_matching_bookmark():
     transcripts = {
         "only_one": [("m1", make_success(80, locations=[
-            {"excerpt": "e1", "context_summary": "Topic A"},
+            {"excerpt": "e1", "title": "Topic A"},
         ]))],
     }
     report = build_report("theme", transcripts)

@@ -68,7 +68,7 @@ def test_render_html_escapes_hostile_content():
     hostile = "<script>alert(1)</script>"
     transcripts = {
         hostile: [("m1", make_success(50, reasoning=hostile, locations=[
-            {"excerpt": hostile, "context_summary": hostile},
+            {"excerpt": hostile, "title": hostile},
         ]))],
     }
     report = build_report("theme", transcripts)
@@ -113,19 +113,33 @@ def test_render_html_transcript_name_links_to_its_detail_section():
     assert 'id="detail-1"' in html
 
 
-def test_render_html_handles_location_with_none_context_summary():
-    """context_summary is optional on Location, so a real payload can have it
+def test_render_html_handles_location_with_none_title():
+    """title is optional on Location, so a real payload can have it
     explicitly None (not just absent) -- .get(key, "") would NOT catch that
     (the key is present with value None), so this must not raise TypeError
     from html.escape(None)."""
     transcripts = {
         "t1": [("m1", make_success(50, locations=[
-            {"excerpt": "some quote", "context_summary": None},
+            {"excerpt": "some quote", "title": None},
         ]))],
     }
     report = build_report("theme", transcripts)
     html = render_html(report)
     assert "some quote" in html
+
+
+def test_render_html_preserves_paragraph_breaks_in_multi_paragraph_excerpt():
+    excerpt = "First paragraph of the passage.\n\nSecond paragraph of the passage."
+    transcripts = {
+        "t1": [("m1", make_success(50, locations=[
+            {"excerpt": excerpt, "title": "A Title"},
+        ]))],
+    }
+    report = build_report("theme", transcripts)
+    html = render_html(report)
+    assert "<p>First paragraph of the passage.</p>" in html
+    assert "<p>Second paragraph of the passage.</p>" in html
+    assert "A Title" in html
 
 
 def test_write_html_from_data_writes_a_file(tmp_path):

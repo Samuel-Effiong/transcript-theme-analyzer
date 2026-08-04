@@ -30,9 +30,9 @@ def test_sustained_explicit_discussion_scores_high():
 
 def test_dedupe_merges_identical_excerpts_from_overlapping_chunks():
     locs = [
-        Location(excerpt="the grief comes in waves", context_summary="a"),
-        Location(excerpt="the grief comes in waves", context_summary="a"),
-        Location(excerpt="distinct elsewhere", context_summary="b"),
+        Location(excerpt="the grief comes in waves", title="a"),
+        Location(excerpt="the grief comes in waves", title="a"),
+        Location(excerpt="distinct elsewhere", title="b"),
     ]
     merged = merge_and_dedupe_locations(locs)
     assert len(merged) == 2

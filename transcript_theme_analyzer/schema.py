@@ -6,11 +6,29 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-class Location(BaseModel):
-    excerpt: str = Field(description="Short verbatim quote from the transcript, enough to locate it")
-    context_summary: Optional[str] = Field(
-        default=None, description="1-sentence description of what's happening here re: the theme"
+class LocationMarker(BaseModel):
+    """What the model reports for one relevant passage -- boundary markers
+    only, not the passage text itself. The pipeline extracts the full text
+    deterministically (see extraction.extract_passage) from these, which is
+    far cheaper in completion tokens and more reliable than asking the
+    model to reproduce a potentially long passage verbatim."""
+
+    title: Optional[str] = Field(
+        default=None, description="Short section-title label (2-6 words, title case) for this passage"
     )
+    start_marker: str = Field(description="A short (5-12 word) verbatim phrase marking where this passage begins")
+    end_marker: str = Field(description="A short (5-12 word) verbatim phrase marking where this passage ends")
+    timestamp: Optional[str] = None
+    speaker: Optional[str] = None
+
+
+class Location(BaseModel):
+    """A fully-extracted passage, ready for display. `excerpt` is filled in
+    by the pipeline from a LocationMarker's boundaries -- the model never
+    produces it directly."""
+
+    excerpt: str = Field(description="The full extracted passage text")
+    title: Optional[str] = Field(default=None, description="Short section-title label for this passage")
     timestamp: Optional[str] = None
     speaker: Optional[str] = None
 
@@ -34,4 +52,4 @@ class ChunkAnalysis(BaseModel):
         description="How direct the theme's presence in this chunk is"
     )
     reasoning: str
-    locations: list[Location] = Field(default_factory=list)
+    locations: list[LocationMarker] = Field(default_factory=list)

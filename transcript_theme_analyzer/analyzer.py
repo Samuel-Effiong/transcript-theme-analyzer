@@ -16,7 +16,8 @@ from . import prompts
 from .aggregate import compute_aggregate_score, merge_and_dedupe_locations
 from .chunker import chunk_transcript, estimate_tokens
 from .config import Config
-from .schema import AnalysisResult, ChunkAnalysis, Location
+from .extraction import extract_passage
+from .schema import AnalysisResult, ChunkAnalysis, Location, LocationMarker
 
 logger = logging.getLogger("transcript_theme_analyzer")
 
@@ -116,11 +117,13 @@ def _repair_parsed_json(parsed, schema_cls):
 
     locations = parsed.get("locations")
     if isinstance(locations, list):
-        # `excerpt` is the one thing on Location that can't be safely
-        # defaulted (there's no non-fabricating placeholder for a quote) --
-        # drop any entry missing it rather than fail the whole response.
+        # start_marker/end_marker are the two things on LocationMarker that
+        # can't be safely defaulted -- without them there's nothing to
+        # anchor extraction on. Drop any entry missing either rather than
+        # fail the whole response.
         parsed["locations"] = [
-            loc for loc in locations if isinstance(loc, dict) and loc.get("excerpt")
+            loc for loc in locations
+            if isinstance(loc, dict) and loc.get("start_marker") and loc.get("end_marker")
         ]
 
     return parsed
@@ -225,15 +228,19 @@ async def analyze_single_pass(
     )
     stats.add("single_pass", model, usage)
 
-    locations = [
-        Location(
-            excerpt=loc.excerpt,
-            context_summary=loc.context_summary,
-            timestamp=loc.timestamp,
-            speaker=loc.speaker,
+    locations = []
+    for marker in result.locations:
+        excerpt = extract_passage(transcript, marker.start_marker, marker.end_marker)
+        if excerpt is None:
+            continue
+        locations.append(
+            Location(
+                excerpt=excerpt,
+                title=marker.title,
+                timestamp=marker.timestamp,
+                speaker=marker.speaker,
+            )
         )
-        for loc in result.locations
-    ]
 
     return AnalysisResult(
         theme=theme,
@@ -316,14 +323,20 @@ async def _synthesize_reasoning(
     return result.reasoning
 
 
-def _fill_location_defaults(loc: Location, chunk) -> Location:
-    """Fills in a location's timestamp/speaker from the chunk's nearest match
-    when the model didn't report one itself."""
+def _extract_and_fill_location(marker: LocationMarker, chunk) -> Location | None:
+    """Extracts the full passage text for one chunk-relative marker, and
+    fills in timestamp/speaker from the chunk's nearest match when the
+    model didn't report one itself. Returns None if the marker's boundaries
+    couldn't be located in the chunk's text (dropped, same policy as a
+    missing excerpt)."""
+    excerpt = extract_passage(chunk.text, marker.start_marker, marker.end_marker)
+    if excerpt is None:
+        return None
     return Location(
-        excerpt=loc.excerpt,
-        context_summary=loc.context_summary,
-        timestamp=loc.timestamp or chunk.nearest_timestamp,
-        speaker=loc.speaker or chunk.nearest_speaker,
+        excerpt=excerpt,
+        title=marker.title,
+        timestamp=marker.timestamp or chunk.nearest_timestamp,
+        speaker=marker.speaker or chunk.nearest_speaker,
     )
 
 
@@ -349,9 +362,10 @@ async def analyze_map_reduce(
     final_score = compute_aggregate_score(analyses, lengths)
 
     all_locations: list[Location] = [
-        _fill_location_defaults(loc, chunk)
+        loc
         for analysis, chunk in chunk_results
-        for loc in analysis.locations
+        for marker in analysis.locations
+        if (loc := _extract_and_fill_location(marker, chunk)) is not None
     ]
     merged_locations = merge_and_dedupe_locations(all_locations)
 

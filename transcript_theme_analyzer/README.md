@@ -130,9 +130,11 @@ both ranked by relevance score, highest first:
   - **One section per transcript** that has at least one located excerpt,
     headed `Transcript: <name>`, so an excerpt can always be traced back to
     its source.
-  - **One sub-heading per excerpt**, generated from that excerpt's own
-    context (not the search keyword), with the quoted passage underneath and
-    its timestamp/speaker if known.
+  - **One sub-heading per passage**, a short section-title (2-6 words)
+    generated from that passage's own content (not the search keyword),
+    with the full continuous passage underneath — not a single short quote,
+    but the entire span of the transcript that discusses the theme at that
+    point, however long that runs — and its timestamp/speaker if known.
 - **`report.html`** — a self-contained, no-dependency interactive page:
   - A sortable ranked table (click any column header) with a relevance bar
     per transcript, and a live filter box to narrow by transcript name.
@@ -203,10 +205,17 @@ python -m transcript_theme_analyzer.eval.compare_models \
   The weights are keyword arguments to `compute_aggregate_score(...)` — swap
   them, or replace the whole function with an LLM aggregation pass over the
   chunk-level outputs, without touching the map step.
-- **Location merging:** chunk-relative offsets are translated to
-  full-transcript offsets, then locations whose ranges overlap by more than
-  50% of the smaller range's length (the overlap-region double-count case)
-  are merged, keeping the longer/more complete excerpt.
+- **Passage extraction:** the model never reproduces a passage's text
+  itself — it reports a short `start_marker`/`end_marker` boundary phrase
+  pair, and `extraction.py` deterministically locates and extracts the
+  exact original text between them (whitespace/case-tolerant matching).
+  This is far cheaper in completion tokens than verbatim reproduction and
+  avoids the model truncating or paraphrasing a long passage. If a marker
+  can't be located, that location is dropped rather than fabricated.
+- **Location merging:** locations from the overlap region of two adjacent
+  chunks (the same passage flagged by both) are merged by comparing
+  normalized excerpt text — an exact match after collapsing
+  whitespace/case — keeping the longer/more complete capture.
 - **Reasoning synthesis:** the final `reasoning` is itself produced by an
   LLM call (cheap relative to the chunk-analysis pass) that synthesizes the
   chunk-level reasonings into one coherent paragraph — not a concatenation.

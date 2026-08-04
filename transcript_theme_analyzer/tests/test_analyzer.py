@@ -1,38 +1,57 @@
-from transcript_theme_analyzer.analyzer import _fill_location_defaults, _repair_parsed_json
+from transcript_theme_analyzer.analyzer import _extract_and_fill_location, _repair_parsed_json
 from transcript_theme_analyzer.chunker import Chunk
-from transcript_theme_analyzer.schema import AnalysisResult, ChunkAnalysis, Location
+from transcript_theme_analyzer.schema import AnalysisResult, ChunkAnalysis, LocationMarker
 
 
-def make_chunk(char_start=1000, char_end=1200, timestamp="[10:00]", speaker="Host"):
+def make_chunk(text="...", char_start=1000, char_end=1200, timestamp="[10:00]", speaker="Host"):
     return Chunk(
         index=0,
         char_start=char_start,
         char_end=char_end,
-        text="...",
+        text=text,
         nearest_timestamp=timestamp,
         nearest_speaker=speaker,
     )
 
 
-def test_fill_location_defaults_fills_timestamp_speaker_from_chunk_when_missing():
-    loc = Location(excerpt="e")
-    result = _fill_location_defaults(loc, make_chunk(timestamp="[05:00]", speaker="Guest"))
+def test_extract_and_fill_location_extracts_the_passage_between_markers():
+    chunk = make_chunk(text="Intro. The passage begins here and keeps going until it ends right here. Outro.")
+    marker = LocationMarker(start_marker="The passage begins here", end_marker="it ends right here")
+    result = _extract_and_fill_location(marker, chunk)
+    assert result is not None
+    assert result.excerpt == "The passage begins here and keeps going until it ends right here"
+
+
+def test_extract_and_fill_location_fills_timestamp_speaker_from_chunk_when_missing():
+    chunk = make_chunk(text="Some text with a start point and an end point in it.", timestamp="[05:00]", speaker="Guest")
+    marker = LocationMarker(start_marker="start point", end_marker="end point")
+    result = _extract_and_fill_location(marker, chunk)
+    assert result is not None
     assert result.timestamp == "[05:00]"
     assert result.speaker == "Guest"
 
 
-def test_fill_location_defaults_keeps_locations_own_timestamp_speaker_when_present():
-    loc = Location(excerpt="e", timestamp="[01:00]", speaker="Host")
-    result = _fill_location_defaults(loc, make_chunk(timestamp="[05:00]", speaker="Guest"))
+def test_extract_and_fill_location_keeps_markers_own_timestamp_speaker_when_present():
+    chunk = make_chunk(text="Some text with a start point and an end point in it.", timestamp="[05:00]", speaker="Guest")
+    marker = LocationMarker(start_marker="start point", end_marker="end point", timestamp="[01:00]", speaker="Host")
+    result = _extract_and_fill_location(marker, chunk)
+    assert result is not None
     assert result.timestamp == "[01:00]"
     assert result.speaker == "Host"
 
 
-def test_fill_location_defaults_preserves_context_summary_and_excerpt():
-    loc = Location(excerpt="the exact quote", context_summary="a summary")
-    result = _fill_location_defaults(loc, make_chunk())
-    assert result.excerpt == "the exact quote"
-    assert result.context_summary == "a summary"
+def test_extract_and_fill_location_preserves_title():
+    chunk = make_chunk(text="Some text with a start point and an end point in it.")
+    marker = LocationMarker(start_marker="start point", end_marker="end point", title="A Title")
+    result = _extract_and_fill_location(marker, chunk)
+    assert result is not None
+    assert result.title == "A Title"
+
+
+def test_extract_and_fill_location_returns_none_when_marker_not_found():
+    chunk = make_chunk(text="This text does not contain the marker phrase at all.")
+    marker = LocationMarker(start_marker="nonexistent phrase", end_marker="also nonexistent")
+    assert _extract_and_fill_location(marker, chunk) is None
 
 
 def test_repair_fills_missing_required_reasoning_with_empty_string():
@@ -53,20 +72,21 @@ def test_repair_rounds_and_clamps_a_fractional_relevance_score():
     assert repaired["relevance_score"] == 88
 
 
-def test_repair_drops_location_entries_missing_excerpt_instead_of_failing():
+def test_repair_drops_location_entries_missing_start_or_end_marker():
     parsed = {
         "relevance_score": 40,
         "explicitness": "explicit",
         "reasoning": "r",
         "locations": [
-            {"excerpt": "a real quote"},
-            {"context_summary": "no excerpt here, should be dropped"},
+            {"start_marker": "a start", "end_marker": "an end"},
+            {"start_marker": "only a start, should be dropped"},
+            {"title": "no markers at all, should be dropped"},
         ],
     }
     repaired = _repair_parsed_json(parsed, ChunkAnalysis)
     result = ChunkAnalysis.model_validate(repaired)
     assert len(result.locations) == 1
-    assert result.locations[0].excerpt == "a real quote"
+    assert result.locations[0].start_marker == "a start"
 
 
 def test_repair_does_not_touch_a_fully_populated_response():

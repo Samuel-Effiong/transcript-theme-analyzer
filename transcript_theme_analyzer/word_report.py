@@ -83,12 +83,12 @@ def _add_internal_link(paragraph, text: str, bookmark_name: str) -> None:
 
 
 def _add_excerpt(document: Document, location: dict) -> None:
-    # The excerpt heading is generated from the location's own context
-    # summary (produced by the analysis pass for that specific passage), not
-    # from the search theme, so headings differ across excerpts even within
-    # the same transcript.
-    heading_text = (location.get("context_summary") or "").strip().rstrip(".")
-    document.add_heading(heading_text or "Relevant excerpt", level=3)
+    # The heading is generated from the location's own title (produced by
+    # the analysis pass for that specific passage), not from the search
+    # theme, so headings differ across excerpts even within the same
+    # transcript.
+    heading_text = (location.get("title") or "").strip().rstrip(".")
+    document.add_heading(heading_text or "Relevant Passage", level=3)
 
     meta_bits = [b for b in (location.get("timestamp"), location.get("speaker")) if b]
     if meta_bits:
@@ -98,8 +98,13 @@ def _add_excerpt(document: Document, location: dict) -> None:
             run.font.size = Pt(9)
 
     excerpt = (location.get("excerpt") or "").strip()
-    p = document.add_paragraph()
-    p.add_run(f"“{excerpt}”").italic = True
+    paragraphs = [p.strip() for p in excerpt.split("\n\n") if p.strip()] or [excerpt]
+    for i, para_text in enumerate(paragraphs):
+        p = document.add_paragraph()
+        p.paragraph_format.left_indent = Pt(18)
+        prefix = "“" if i == 0 else ""
+        suffix = "”" if i == len(paragraphs) - 1 else ""
+        p.add_run(f"{prefix}{para_text}{suffix}").italic = True
 
 
 def _matching_transcripts(report: BatchReport, min_score: int | None) -> list[TranscriptResult]:
