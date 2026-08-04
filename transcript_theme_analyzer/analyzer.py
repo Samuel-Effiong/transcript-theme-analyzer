@@ -74,18 +74,21 @@ def _json_schema_for(model_cls, name: str) -> dict:
     return {"name": name, "schema": schema, "strict": True}
 
 
+VALID_EXPLICITNESS = {"explicit", "tangential", "absent"}
+
+
 def _repair_parsed_json(parsed, schema_cls):
     """Best-effort repair of a parsed JSON object against schema_cls's
     required fields before validation.
 
     Models are unreliable about including every required field consistently
     even when instructed to (missing `reasoning`, a `relevance_score` sent as
-    a fractional float, etc.) -- retrying the identical call over and over
-    just burns the retry budget on the same failure. This fills only safe,
-    non-fabricating defaults (empty string/zero/empty list) for missing
-    required fields, and coerces an out-of-range float score to the nearest
-    valid int -- it never invents substantive content like reasoning or
-    excerpts.
+    a fractional float, an `explicitness` outside the allowed enum, etc.) --
+    retrying the identical call over and over just burns the retry budget on
+    the same failure. This fills only safe, non-fabricating defaults (empty
+    string/zero/empty list/"absent") for missing or invalid required fields,
+    and coerces an out-of-range float score to the nearest valid int -- it
+    never invents substantive content like reasoning or excerpts.
     """
     if not isinstance(parsed, dict):
         return parsed
@@ -100,6 +103,12 @@ def _repair_parsed_json(parsed, schema_cls):
             parsed[name] = 0
         elif get_origin(field.annotation) is list:
             parsed[name] = []
+
+    # `explicitness` is a Literal enum, not a plain str/int/list, so the
+    # generic loop above doesn't cover it -- handle missing AND out-of-enum
+    # values here (covers both cases with one check).
+    if "explicitness" in schema_cls.model_fields and parsed.get("explicitness") not in VALID_EXPLICITNESS:
+        parsed["explicitness"] = "absent"
 
     score = parsed.get("relevance_score")
     if isinstance(score, float):

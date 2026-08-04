@@ -75,6 +75,27 @@ def test_repair_does_not_touch_a_fully_populated_response():
     assert repaired == parsed
 
 
+def test_repair_defaults_missing_explicitness_to_absent():
+    parsed = {"relevance_score": 5, "reasoning": "r", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    result = ChunkAnalysis.model_validate(repaired)
+    assert result.explicitness == "absent"
+
+
+def test_repair_coerces_out_of_enum_explicitness_to_absent():
+    parsed = {"relevance_score": 5, "explicitness": "somewhat", "reasoning": "r", "locations": []}
+    repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+    result = ChunkAnalysis.model_validate(repaired)
+    assert result.explicitness == "absent"
+
+
+def test_repair_keeps_valid_explicitness_values_unchanged():
+    for value in ("explicit", "tangential", "absent"):
+        parsed = {"relevance_score": 5, "explicitness": value, "reasoning": "r", "locations": []}
+        repaired = _repair_parsed_json(parsed, ChunkAnalysis)
+        assert repaired["explicitness"] == value
+
+
 def test_repair_fills_missing_reasoning_on_analysis_result_too():
     parsed = {
         "theme": "t",

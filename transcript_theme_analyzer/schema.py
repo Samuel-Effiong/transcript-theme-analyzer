@@ -1,7 +1,7 @@
 """Pydantic models for the analysis output schema."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -30,8 +30,8 @@ class ChunkAnalysis(BaseModel):
     """Partial result produced by the map step, for a single chunk."""
 
     relevance_score: int = Field(ge=0, le=100)
-    explicitness: str = Field(
-        description="How direct the theme's presence in this chunk is: 'explicit', 'tangential', or 'absent'"
+    explicitness: Literal["explicit", "tangential", "absent"] = Field(
+        description="How direct the theme's presence in this chunk is"
     )
     reasoning: str
     locations: list[Location] = Field(default_factory=list)
