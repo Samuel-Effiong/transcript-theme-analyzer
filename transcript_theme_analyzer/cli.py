@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fnmatch
 import glob
 import os
 import sys
@@ -22,7 +23,7 @@ from .analyzer import analyze
 from .cache import write_cache
 from .client import make_client
 from .config import load_config
-from .loader import detect_format, load_transcript_text
+from .loader import SUPPORTED_EXTENSIONS, detect_format, load_transcript_text
 from .report import write_html_from_data
 from .word_report import write_docx_from_data
 
@@ -58,8 +59,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _discover_transcript_paths(transcript_dir: str, glob_pattern: str | None) -> list[str]:
-    patterns = [glob_pattern] if glob_pattern else DEFAULT_GLOB_PATTERNS
-    paths = {p for pattern in patterns for p in glob.glob(os.path.join(transcript_dir, pattern))}
+    """Find transcripts anywhere under transcript_dir, including nested
+    subfolders (e.g. a Google Drive folder with sub-folders of transcripts).
+
+    Skips hidden files (starting with '.') and Word temporary lock files
+    (starting with '~$'). Supported extensions are matched case-insensitively.
+    """
+    paths = []
+    for root, _, files in os.walk(transcript_dir):
+        for filename in files:
+            if filename.startswith((".", "~$")):
+                continue
+            ext = os.path.splitext(filename)[1].lower()
+            if glob_pattern:
+                if fnmatch.fnmatch(filename.lower(), glob_pattern.lower()):
+                    paths.append(os.path.join(root, filename))
+            else:
+                if ext in SUPPORTED_EXTENSIONS:
+                    paths.append(os.path.join(root, filename))
     return sorted(paths)
 
 
