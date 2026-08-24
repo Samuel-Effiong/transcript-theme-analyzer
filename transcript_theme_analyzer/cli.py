@@ -15,11 +15,12 @@ import argparse
 import asyncio
 import fnmatch
 import glob
+import logging
 import os
 import sys
 import time
 
-from .analyzer import analyze
+from .analyzer import Progress, analyze
 from .cache import write_cache
 from .client import make_client
 from .config import load_config
@@ -55,7 +56,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="results",
         help="Directory to write the report (report.html, report.docx) into",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Progress verbosity. INFO (default) reports each chunk as it completes; "
+        "WARNING reports only retries and failures",
+    )
     return parser.parse_args(argv)
+
+
+def _setup_logging(level: str) -> None:
+    """Send progress to stdout, line-buffered.
+
+    Both matter in a notebook: `!python -m ...` gives the process a pipe
+    rather than a TTY, so stdout would otherwise be block-buffered and the
+    cell would stay blank until the whole run finished. Logging to stdout
+    (not stderr) also keeps progress lines in order with the plain prints
+    below, which notebooks otherwise render as two separate streams.
+    """
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):  # not a reconfigurable stream
+        pass
+    logging.basicConfig(
+        level=getattr(logging, level),
+        format="%(asctime)s %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+        force=True,
+    )
 
 
 def _discover_transcript_paths(transcript_dir: str, glob_pattern: str | None) -> list[str]:
@@ -97,11 +127,13 @@ def _validate_formats_upfront(paths: list[str]) -> None:
         sys.exit(1)
 
 
-async def run_one_model(transcript: str, theme: str, model: str, config) -> dict:
+async def run_one_model(transcript: str, theme: str, model: str, config, label: str = "") -> dict:
     client = make_client(config)
     start = time.monotonic()
-    result, stats = await analyze(client, model, theme, transcript, config)
+    progress = Progress(label=f"{label}{model}" if label else model)
+    result, stats = await analyze(client, model, theme, transcript, config, progress)
     elapsed = time.monotonic() - start
+    progress.note(f"finished in {elapsed:.0f}s ({stats.total_tokens:,} tokens)")
     payload = result.model_dump()
     payload["_meta"] = {
         "elapsed_seconds": round(elapsed, 2),
@@ -110,7 +142,9 @@ async def run_one_model(transcript: str, theme: str, model: str, config) -> dict
     return payload
 
 
-async def run_all(transcript: str, theme: str, models: list[str]) -> list[tuple[str, dict]]:
+async def run_all(
+    transcript: str, theme: str, models: list[str], label: str = ""
+) -> list[tuple[str, dict]]:
     """Run every model against one transcript. Returns a list of
     ``(model, raw_result_payload)`` pairs, in the same order as ``models`` —
     a failed run's payload is ``{"model": ..., "error": ...}``.
@@ -118,7 +152,7 @@ async def run_all(transcript: str, theme: str, models: list[str]) -> list[tuple[
     config = load_config()
 
     results = await asyncio.gather(
-        *[run_one_model(transcript, theme, model, config) for model in models],
+        *[run_one_model(transcript, theme, model, config, label) for model in models],
         return_exceptions=True,
     )
 
@@ -148,9 +182,12 @@ async def run_batch(
     transcript_paths: list[str], theme: str, models: list[str], out_dir: str
 ) -> None:
     raw_by_transcript: dict[str, list[tuple[str, dict]]] = {}
-    for path in transcript_paths:
+    total = len(transcript_paths)
+    batch_start = time.monotonic()
+    print(f"Analyzing {total} transcript(s) x {len(models)} model(s) for theme: {theme!r}")
+    for index, path in enumerate(transcript_paths, start=1):
         stem = os.path.splitext(os.path.basename(path))[0]
-        print(f"\n=== {stem} ===")
+        print(f"\n=== [{index}/{total}] {stem} ===")
         try:
             transcript = load_transcript_text(path)
         except (ValueError, OSError) as exc:
@@ -160,14 +197,17 @@ async def run_batch(
                 for model in models
             ]
             continue
-        raw_by_transcript[stem] = await run_all(transcript, theme, models)
+        raw_by_transcript[stem] = await run_all(
+            transcript, theme, models, label=f"{index}/{total} {stem} | "
+        )
 
-    print()
+    print(f"\nAll {total} transcript(s) analyzed in {time.monotonic() - batch_start:.0f}s")
     _write_outputs(theme, raw_by_transcript, out_dir)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    _setup_logging(args.log_level)
     config = load_config()
     models = args.models or [config.default_model]
 

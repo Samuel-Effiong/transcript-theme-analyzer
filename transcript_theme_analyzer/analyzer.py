@@ -23,6 +23,35 @@ logger = logging.getLogger("transcript_theme_analyzer")
 
 
 @dataclass
+class Progress:
+    """Emits a heartbeat as one transcript/model run works through its chunks.
+
+    A long run is otherwise completely silent between the start of a
+    transcript and its final score -- this reports each chunk as it lands so
+    a stalled run is distinguishable from a slow one.
+    """
+
+    label: str
+    total: int = 0
+    done: int = 0
+
+    def start(self, mode: str, total: int = 0) -> None:
+        self.total = total
+        self.done = 0
+        if total:
+            logger.info("[%s] %s: %d chunks", self.label, mode, total)
+        else:
+            logger.info("[%s] %s", self.label, mode)
+
+    def step(self) -> None:
+        self.done += 1
+        logger.info("[%s] chunk %d/%d done", self.label, self.done, self.total)
+
+    def note(self, message: str) -> None:
+        logger.info("[%s] %s", self.label, message)
+
+
+@dataclass
 class CallLog:
     label: str
     model: str
@@ -139,6 +168,7 @@ async def _call_with_retry(
     schema_name: str,
     max_retries: int,
     max_output_tokens: int,
+    label: str = "",
 ):
     """Call the chat completions API, enforcing the schema.
 
@@ -192,7 +222,10 @@ async def _call_with_retry(
         except RETRYABLE_EXCEPTIONS as exc:
             last_exc = exc
             delay = min(2 ** attempt + random.uniform(0, 1), 30)
-            logger.warning("Retryable error on attempt %d/%d: %s. Sleeping %.1fs", attempt + 1, max_retries, exc, delay)
+            logger.warning(
+                "[%s] Retryable error on attempt %d/%d: %s. Sleeping %.1fs",
+                label, attempt + 1, max_retries, exc, delay,
+            )
             await asyncio.sleep(delay)
         except openai.APIStatusError:
             # Non-retryable API error (bad request, auth, billing/quota, not
@@ -201,7 +234,10 @@ async def _call_with_retry(
             raise
         except (json.JSONDecodeError, Exception) as exc:  # noqa: BLE001 - parse/validation retry
             last_exc = exc
-            logger.warning("Parse/validation error on attempt %d/%d: %s", attempt + 1, max_retries, exc)
+            logger.warning(
+                "[%s] Parse/validation error on attempt %d/%d: %s",
+                label, attempt + 1, max_retries, exc,
+            )
             await asyncio.sleep(min(1.5 ** attempt, 10))
 
     raise RuntimeError(f"Failed after {max_retries} attempts: {last_exc}") from last_exc
@@ -214,7 +250,10 @@ async def analyze_single_pass(
     transcript: str,
     config: Config,
     stats: RunStats,
+    progress: Progress | None = None,
 ) -> AnalysisResult:
+    if progress:
+        progress.start("single-pass")
     user = prompts.SINGLE_PASS_USER_PROMPT_TEMPLATE.format(theme=theme, transcript=transcript)
     result, usage = await _call_with_retry(
         client,
@@ -225,8 +264,11 @@ async def analyze_single_pass(
         schema_name="chunk_analysis",
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
+        label=progress.label if progress else "",
     )
     stats.add("single_pass", model, usage)
+    if progress:
+        progress.note("single-pass call complete")
 
     locations = []
     for marker in result.locations:
@@ -261,6 +303,7 @@ async def _analyze_one_chunk(
     config: Config,
     stats: RunStats,
     semaphore: asyncio.Semaphore,
+    progress: Progress | None = None,
 ) -> tuple[ChunkAnalysis, "object"]:
     async with semaphore:
         user = prompts.CHUNK_USER_PROMPT_TEMPLATE.format(
@@ -280,8 +323,11 @@ async def _analyze_one_chunk(
             schema_name="chunk_analysis",
             max_retries=config.max_retries,
             max_output_tokens=config.max_output_tokens,
+            label=progress.label if progress else "",
         )
         stats.add(f"chunk_{chunk.index}", model, usage)
+        if progress:
+            progress.step()
         return result, chunk
 
 
@@ -293,6 +339,7 @@ async def _synthesize_reasoning(
     chunk_results: list[tuple[ChunkAnalysis, object]],
     config: Config,
     stats: RunStats,
+    progress: Progress | None = None,
 ) -> str:
     lines = []
     for result, chunk in sorted(chunk_results, key=lambda pair: pair[1].index):
@@ -318,6 +365,7 @@ async def _synthesize_reasoning(
         schema_name="synthesis_output",
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
+        label=progress.label if progress else "",
     )
     stats.add("synthesis", model, usage)
     return result.reasoning
@@ -347,12 +395,15 @@ async def analyze_map_reduce(
     transcript: str,
     config: Config,
     stats: RunStats,
+    progress: Progress | None = None,
 ) -> AnalysisResult:
     chunks = chunk_transcript(transcript, config.chunk_size_tokens, config.chunk_overlap_tokens)
     semaphore = asyncio.Semaphore(config.max_concurrent_chunks)
+    if progress:
+        progress.start(f"chunked (max {config.max_concurrent_chunks} concurrent)", len(chunks))
 
     tasks = [
-        _analyze_one_chunk(client, model, theme, chunk, len(chunks), config, stats, semaphore)
+        _analyze_one_chunk(client, model, theme, chunk, len(chunks), config, stats, semaphore, progress)
         for chunk in chunks
     ]
     chunk_results = await asyncio.gather(*tasks)
@@ -368,9 +419,14 @@ async def analyze_map_reduce(
         if (loc := _extract_and_fill_location(marker, chunk)) is not None
     ]
     merged_locations = merge_and_dedupe_locations(all_locations)
+    if progress:
+        progress.note(
+            f"all chunks done, score={final_score}, "
+            f"{len(merged_locations)} passages — synthesizing reasoning"
+        )
 
     reasoning = await _synthesize_reasoning(
-        client, model, theme, final_score, chunk_results, config, stats
+        client, model, theme, final_score, chunk_results, config, stats, progress
     )
 
     return AnalysisResult(
@@ -389,12 +445,13 @@ async def analyze(
     theme: str,
     transcript: str,
     config: Config,
+    progress: Progress | None = None,
 ) -> tuple[AnalysisResult, RunStats]:
     """Entry point: picks the single-pass fast path or the chunked map-reduce path."""
     stats = RunStats()
     estimated_tokens = estimate_tokens(transcript)
     if estimated_tokens <= config.single_pass_token_limit:
-        result = await analyze_single_pass(client, model, theme, transcript, config, stats)
+        result = await analyze_single_pass(client, model, theme, transcript, config, stats, progress)
     else:
-        result = await analyze_map_reduce(client, model, theme, transcript, config, stats)
+        result = await analyze_map_reduce(client, model, theme, transcript, config, stats, progress)
     return result, stats
