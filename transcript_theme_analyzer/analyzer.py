@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -98,6 +99,91 @@ RETRYABLE_EXCEPTIONS = (
 )
 
 
+class RequestGate:
+    """Caps total in-flight API calls and coordinates backoff across them.
+
+    Two jobs, both about not tripping provider rate limits once transcripts
+    and chunks run concurrently:
+
+    * **A single global ceiling.** Transcript- and chunk-level concurrency
+      multiply, so bounding either alone doesn't bound the request rate.
+    * **Shared cooldown.** When one call is rate-limited, every other worker
+      is about to be too. Backing off only the unlucky caller leaves the rest
+      hammering a limit that is already tripped, which is what turns a brief
+      429 into a sustained one. A 429 here pauses *all* callers.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._semaphore = asyncio.Semaphore(limit)
+        self._pause_until = 0.0
+
+    def pause(self, seconds: float) -> None:
+        """Hold every caller back for `seconds`. Only ever extends an
+        existing cooldown -- a shorter one must not cut a longer one short."""
+        target = asyncio.get_running_loop().time() + seconds
+        self._pause_until = max(self._pause_until, target)
+
+    async def __aenter__(self) -> "RequestGate":
+        await self._semaphore.acquire()
+        try:
+            # Re-check in a loop: another worker can extend the cooldown
+            # while this one is sleeping through it.
+            while True:
+                remaining = self._pause_until - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    return self
+                await asyncio.sleep(remaining)
+        except BaseException:
+            # Cancelled mid-cooldown -- must not leak the slot.
+            self._semaphore.release()
+            raise
+
+    async def __aexit__(self, *exc_info) -> None:
+        self._semaphore.release()
+
+
+_gate: RequestGate | None = None
+_gate_loop: asyncio.AbstractEventLoop | None = None
+
+
+def get_request_gate(limit: int) -> RequestGate:
+    """One gate per event loop. Rebuilt if the loop or limit changes, since an
+    asyncio primitive from a previous loop is unusable in the current one."""
+    global _gate, _gate_loop
+    loop = asyncio.get_running_loop()
+    if _gate is None or _gate_loop is not loop or _gate.limit != limit:
+        _gate = RequestGate(limit)
+        _gate_loop = loop
+    return _gate
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Read the provider's own Retry-After hint. Honouring it beats guessing
+    with exponential backoff -- the server is stating exactly how long the
+    limit lasts."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    raw = headers.get("retry-after") or headers.get("x-ratelimit-reset-after")
+    if raw is None:
+        return None
+    try:
+        # Retry-After may also be an HTTP date; a date fails this parse and
+        # falls through to normal exponential backoff, which is fine.
+        return max(0.0, min(float(raw), 120.0))
+    except (TypeError, ValueError):
+        return None
+
+
+# Models whose endpoint rejected `response_format={"type": "json_schema"}`.
+# Anthropic's OpenAI-compatible endpoint is one of them, and without this the
+# pipeline pays a guaranteed-400 round trip before the fallback on *every*
+# call -- doubling request count and latency for the whole run.
+_NO_STRUCTURED_OUTPUT: set[str] = set()
+
+
 def _json_schema_for(model_cls, name: str) -> dict:
     schema = model_cls.model_json_schema()
     schema["additionalProperties"] = False
@@ -169,45 +255,68 @@ async def _call_with_retry(
     max_retries: int,
     max_output_tokens: int,
     label: str = "",
+    gate: "RequestGate | None" = None,
 ):
     """Call the chat completions API, enforcing the schema.
 
     Tries native structured output (response_format=json_schema) first; if
     the provider/model rejects that parameter, falls back to a plain call
-    with a strict parse-and-retry loop.
+    with a strict parse-and-retry loop. Once a model is known to reject it,
+    later calls skip straight to the fallback rather than re-paying the
+    failed round trip every time.
     """
+    async def _plain_call():
+        return await client.chat.completions.create(
+            model=model,
+            max_tokens=max_output_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": user
+                    + "\n\nRespond with ONLY a single valid JSON object matching "
+                    "the required schema. No markdown fences, no commentary.",
+                },
+            ],
+        )
+
     last_exc: Exception | None = None
     for attempt in range(max_retries):
         try:
-            try:
-                resp = await client.chat.completions.create(
-                    model=model,
-                    max_tokens=max_output_tokens,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": _json_schema_for(schema_cls, schema_name),
-                    },
-                )
-            except openai.BadRequestError:
-                # Provider doesn't support structured output mode -- fall back
-                # to plain JSON-mode prompting and a strict parse retry below.
-                resp = await client.chat.completions.create(
-                    model=model,
-                    max_tokens=max_output_tokens,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {
-                            "role": "user",
-                            "content": user
-                            + "\n\nRespond with ONLY a single valid JSON object matching "
-                            "the required schema. No markdown fences, no commentary.",
-                        },
-                    ],
-                )
+            # The gate is held across the structured-output attempt and its
+            # fallback so the pair counts as one unit of concurrency.
+            async with (gate if gate is not None else contextlib.nullcontext()):
+                if model in _NO_STRUCTURED_OUTPUT:
+                    resp = await _plain_call()
+                else:
+                    try:
+                        resp = await client.chat.completions.create(
+                            model=model,
+                            max_tokens=max_output_tokens,
+                            messages=[
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user},
+                            ],
+                            response_format={
+                                "type": "json_schema",
+                                "json_schema": _json_schema_for(schema_cls, schema_name),
+                            },
+                        )
+                    except openai.BadRequestError:
+                        # Provider doesn't support structured output mode -- fall back
+                        # to plain JSON-mode prompting and a strict parse retry below.
+                        resp = await _plain_call()
+                        # Only remember the model as unsupported once the fallback
+                        # has actually succeeded: a BadRequestError from something
+                        # else (oversized input, bad params) would otherwise
+                        # permanently disable structured output for no reason.
+                        if model not in _NO_STRUCTURED_OUTPUT:
+                            _NO_STRUCTURED_OUTPUT.add(model)
+                            logger.info(
+                                "%s rejected structured output (response_format=json_schema); "
+                                "using JSON-mode prompting for the rest of this run",
+                                model,
+                            )
 
             content = resp.choices[0].message.content or ""
             content = content.strip()
@@ -221,7 +330,17 @@ async def _call_with_retry(
             return result, resp.usage
         except RETRYABLE_EXCEPTIONS as exc:
             last_exc = exc
+            # Exponential backoff, jittered so concurrent workers that were
+            # rate-limited together don't retry in lockstep and re-trip the
+            # limit. A server-supplied Retry-After overrides the guess.
             delay = min(2 ** attempt + random.uniform(0, 1), 30)
+            hinted = _retry_after_seconds(exc)
+            if hinted is not None:
+                delay = max(delay, hinted)
+            if isinstance(exc, openai.RateLimitError) and gate is not None:
+                # Hold every other in-flight worker back too, not just this
+                # one -- see RequestGate for why.
+                gate.pause(delay)
             logger.warning(
                 "[%s] Retryable error on attempt %d/%d: %s. Sleeping %.1fs",
                 label, attempt + 1, max_retries, exc, delay,
@@ -251,6 +370,7 @@ async def analyze_single_pass(
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
+    gate: RequestGate | None = None,
 ) -> AnalysisResult:
     if progress:
         progress.start("single-pass")
@@ -265,6 +385,7 @@ async def analyze_single_pass(
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
+        gate=gate,
     )
     stats.add("single_pass", model, usage)
     if progress:
@@ -304,6 +425,7 @@ async def _analyze_one_chunk(
     stats: RunStats,
     semaphore: asyncio.Semaphore,
     progress: Progress | None = None,
+    gate: RequestGate | None = None,
 ) -> tuple[ChunkAnalysis, "object"]:
     async with semaphore:
         user = prompts.CHUNK_USER_PROMPT_TEMPLATE.format(
@@ -324,6 +446,7 @@ async def _analyze_one_chunk(
             max_retries=config.max_retries,
             max_output_tokens=config.max_output_tokens,
             label=progress.label if progress else "",
+            gate=gate,
         )
         stats.add(f"chunk_{chunk.index}", model, usage)
         if progress:
@@ -340,6 +463,7 @@ async def _synthesize_reasoning(
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
+    gate: RequestGate | None = None,
 ) -> str:
     lines = []
     for result, chunk in sorted(chunk_results, key=lambda pair: pair[1].index):
@@ -366,6 +490,7 @@ async def _synthesize_reasoning(
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
+        gate=gate,
     )
     stats.add("synthesis", model, usage)
     return result.reasoning
@@ -396,6 +521,7 @@ async def analyze_map_reduce(
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
+    gate: RequestGate | None = None,
 ) -> AnalysisResult:
     chunks = chunk_transcript(transcript, config.chunk_size_tokens, config.chunk_overlap_tokens)
     semaphore = asyncio.Semaphore(config.max_concurrent_chunks)
@@ -403,7 +529,9 @@ async def analyze_map_reduce(
         progress.start(f"chunked (max {config.max_concurrent_chunks} concurrent)", len(chunks))
 
     tasks = [
-        _analyze_one_chunk(client, model, theme, chunk, len(chunks), config, stats, semaphore, progress)
+        _analyze_one_chunk(
+            client, model, theme, chunk, len(chunks), config, stats, semaphore, progress, gate
+        )
         for chunk in chunks
     ]
     chunk_results = await asyncio.gather(*tasks)
@@ -426,7 +554,7 @@ async def analyze_map_reduce(
         )
 
     reasoning = await _synthesize_reasoning(
-        client, model, theme, final_score, chunk_results, config, stats, progress
+        client, model, theme, final_score, chunk_results, config, stats, progress, gate
     )
 
     return AnalysisResult(
@@ -446,12 +574,17 @@ async def analyze(
     transcript: str,
     config: Config,
     progress: Progress | None = None,
+    gate: RequestGate | None = None,
 ) -> tuple[AnalysisResult, RunStats]:
     """Entry point: picks the single-pass fast path or the chunked map-reduce path."""
     stats = RunStats()
     estimated_tokens = estimate_tokens(transcript)
     if estimated_tokens <= config.single_pass_token_limit:
-        result = await analyze_single_pass(client, model, theme, transcript, config, stats, progress)
+        result = await analyze_single_pass(
+            client, model, theme, transcript, config, stats, progress, gate
+        )
     else:
-        result = await analyze_map_reduce(client, model, theme, transcript, config, stats, progress)
+        result = await analyze_map_reduce(
+            client, model, theme, transcript, config, stats, progress, gate
+        )
     return result, stats

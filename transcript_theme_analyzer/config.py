@@ -54,13 +54,44 @@ class Config(BaseModel):
     max_concurrent_chunks: int = Field(
         default_factory=lambda: int(os.environ.get("MAX_CONCURRENT_CHUNKS", "8"))
     )
+    max_concurrent_transcripts: int = Field(
+        default_factory=lambda: int(os.environ.get("MAX_CONCURRENT_TRANSCRIPTS", "4"))
+    )
+    # The real throttle. Transcript- and chunk-level concurrency multiply
+    # (4 transcripts x 8 chunks = 32 in-flight), which is how a run walks
+    # into provider rate limits. This caps total simultaneous API calls
+    # regardless of how those two interleave.
+    max_concurrent_requests: int = Field(
+        default_factory=lambda: int(os.environ.get("MAX_CONCURRENT_REQUESTS", "12"))
+    )
     max_retries: int = Field(
         default_factory=lambda: int(os.environ.get("LLM_MAX_RETRIES", "5"))
     )
     max_output_tokens: int = Field(
         default_factory=lambda: int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "4096"))
     )
+    # Per-request ceiling. The SDK's own default is 600s, long enough for one
+    # hung call to hold a concurrency slot for ten minutes.
+    request_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.environ.get("LLM_REQUEST_TIMEOUT", "180"))
+    )
+    # Retries the SDK itself performs for connection-level faults, beneath
+    # our own retry loop. Cheap insurance against transient socket errors.
+    sdk_max_retries: int = Field(
+        default_factory=lambda: int(os.environ.get("LLM_SDK_MAX_RETRIES", "2"))
+    )
+
+    def validated(self) -> "Config":
+        """Clamp nonsensical concurrency/retry values rather than letting a
+        stray env var (``MAX_CONCURRENT_REQUESTS=0``) deadlock the run."""
+        self.max_concurrent_chunks = max(1, self.max_concurrent_chunks)
+        self.max_concurrent_transcripts = max(1, self.max_concurrent_transcripts)
+        self.max_concurrent_requests = max(1, self.max_concurrent_requests)
+        self.max_retries = max(1, self.max_retries)
+        self.sdk_max_retries = max(0, self.sdk_max_retries)
+        self.request_timeout_seconds = max(1.0, self.request_timeout_seconds)
+        return self
 
 
 def load_config() -> Config:
-    return Config()
+    return Config().validated()
