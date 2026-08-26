@@ -23,9 +23,19 @@ def make_client(config: Config) -> AsyncOpenAI:
     connection rather than waiting on the model.
     """
     pool_size = max(config.max_concurrent_requests * 2, 10)
+
+    # OpenRouter uses these to attribute traffic to an app. Other providers
+    # ignore unknown headers, but only send them where they mean something.
+    default_headers = None
+    if config.is_openrouter:
+        default_headers = {"X-Title": config.openrouter_app_name}
+        if config.openrouter_site_url:
+            default_headers["HTTP-Referer"] = config.openrouter_site_url
+
     return AsyncOpenAI(
         base_url=config.base_url,
         api_key=config.api_key,
+        default_headers=default_headers,
         timeout=httpx.Timeout(
             config.request_timeout_seconds,
             # A long generation can legitimately stall between tokens, so the

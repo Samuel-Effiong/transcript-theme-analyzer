@@ -39,7 +39,17 @@ class Config(BaseModel):
     )
     default_model: str = Field(
         default_factory=lambda: os.environ.get(
-            "LLM_DEFAULT_MODEL", "anthropic/claude-sonnet-5"
+            "LLM_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"
+        )
+    )
+    # OpenRouter attributes traffic to an app via these two headers and shows
+    # it on their public leaderboards. Optional, ignored by other providers.
+    openrouter_site_url: str = Field(
+        default_factory=lambda: os.environ.get("OPENROUTER_SITE_URL", "")
+    )
+    openrouter_app_name: str = Field(
+        default_factory=lambda: os.environ.get(
+            "OPENROUTER_APP_NAME", "transcript-theme-analyzer"
         )
     )
     chunk_size_tokens: int = Field(
@@ -80,6 +90,10 @@ class Config(BaseModel):
     sdk_max_retries: int = Field(
         default_factory=lambda: int(os.environ.get("LLM_SDK_MAX_RETRIES", "2"))
     )
+
+    @property
+    def is_openrouter(self) -> bool:
+        return "openrouter.ai" in self.base_url or self.provider.lower() == "openrouter"
 
     def validated(self) -> "Config":
         """Clamp nonsensical concurrency/retry values rather than letting a

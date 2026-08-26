@@ -184,10 +184,58 @@ def _retry_after_seconds(exc: Exception) -> float | None:
 _NO_STRUCTURED_OUTPUT: set[str] = set()
 
 
+# Validation keywords that OpenAI-style strict structured output does not
+# support. Sending them gets the whole request rejected, so they are stripped
+# from the wire schema -- Pydantic still enforces them when validating the
+# response, which is where they actually matter.
+_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset({
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minLength", "maxLength", "pattern", "format",
+    "minItems", "maxItems", "uniqueItems", "default",
+})
+
+
+def _strictify(node):
+    """Rewrite a Pydantic-generated JSON Schema into the strict subset.
+
+    Strict mode has two requirements Pydantic's output violates by default:
+    every object must set ``additionalProperties: false``, and every property
+    must appear in ``required`` -- optionality is expressed by a nullable type
+    union, not by omission from ``required``. Pydantic already emits
+    ``Optional[str]`` as an ``anyOf`` with ``null``, so promoting every
+    property to required is safe: the model can still answer ``null``.
+
+    Without this the provider rejects the request, the caller silently falls
+    back to prompt-based JSON, and the reliability benefit of native
+    structured output is lost on every model that actually supports it.
+    """
+    if isinstance(node, list):
+        return [_strictify(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    result = {k: v for k, v in node.items() if k not in _UNSUPPORTED_SCHEMA_KEYWORDS}
+    for key, value in list(result.items()):
+        if key in ("properties", "$defs", "definitions") and isinstance(value, dict):
+            result[key] = {k: _strictify(v) for k, v in value.items()}
+        elif key in ("items", "additionalProperties") and isinstance(value, dict):
+            result[key] = _strictify(value)
+        elif key in ("anyOf", "oneOf", "allOf") and isinstance(value, list):
+            result[key] = [_strictify(v) for v in value]
+
+    if result.get("type") == "object" or "properties" in result:
+        properties = result.get("properties") or {}
+        result["additionalProperties"] = False
+        result["required"] = list(properties.keys())
+    return result
+
+
 def _json_schema_for(model_cls, name: str) -> dict:
-    schema = model_cls.model_json_schema()
-    schema["additionalProperties"] = False
-    return {"name": name, "schema": schema, "strict": True}
+    return {
+        "name": name,
+        "schema": _strictify(model_cls.model_json_schema()),
+        "strict": True,
+    }
 
 
 VALID_EXPLICITNESS = {"explicit", "tangential", "absent"}
@@ -226,8 +274,12 @@ def _repair_parsed_json(parsed, schema_cls):
     if "explicitness" in schema_cls.model_fields and parsed.get("explicitness") not in VALID_EXPLICITNESS:
         parsed["explicitness"] = "absent"
 
+    # The 0-100 bound is enforced by Pydantic but deliberately not sent on the
+    # wire (strict mode rejects minimum/maximum), so an out-of-range answer
+    # reaches us intact. Clamping beats burning a retry on an off-by-a-little
+    # score; a fractional score is rounded the same way.
     score = parsed.get("relevance_score")
-    if isinstance(score, float):
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
         parsed["relevance_score"] = max(0, min(100, round(score)))
 
     locations = parsed.get("locations")
@@ -242,6 +294,62 @@ def _repair_parsed_json(parsed, schema_cls):
         ]
 
     return parsed
+
+
+class TruncatedResponseError(Exception):
+    """The model hit its output cap mid-JSON. Retrying the identical request
+    usually truncates again, so this carries a pointed message rather than
+    presenting as a generic parse failure."""
+
+
+def _extract_content(resp, model: str) -> str:
+    """Pull the JSON text out of a completion, failing loudly on the response
+    shapes that are easy to mistake for a parse error.
+
+    Aggregators like OpenRouter report some upstream failures as HTTP 200 with
+    an error payload and no choices, so the SDK raises nothing. Reasoning
+    models add a second trap: the answer can be empty while the token budget
+    went to a separate reasoning field. Both look like "invalid JSON" if read
+    naively, which sends the retry loop chasing the wrong problem.
+    """
+    error = getattr(resp, "error", None) or (getattr(resp, "model_extra", None) or {}).get("error")
+    if error:
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        raise RuntimeError(f"Provider returned an error for {model}: {message}")
+
+    choices = getattr(resp, "choices", None)
+    if not choices:
+        raise RuntimeError(f"Provider returned no choices for {model} (empty response)")
+
+    choice = choices[0]
+    # finish_reason is optional in practice: some OpenAI-compatible providers
+    # omit it entirely, so it must never be dereferenced directly.
+    finish_reason = getattr(choice, "finish_reason", None)
+    content = (getattr(getattr(choice, "message", None), "content", None) or "").strip()
+
+    if not content:
+        # A reasoning model that spent its whole budget thinking leaves the
+        # answer empty; say so, because the fix is a bigger output cap or a
+        # non-reasoning model, not another identical attempt.
+        extra = getattr(getattr(choice, "message", None), "model_extra", None) or {}
+        if extra.get("reasoning") or extra.get("reasoning_content"):
+            raise TruncatedResponseError(
+                f"{model} returned reasoning but no answer content -- raise "
+                f"LLM_MAX_OUTPUT_TOKENS or use a non-reasoning model"
+            )
+        raise RuntimeError(f"{model} returned empty content (finish_reason={finish_reason!r})")
+
+    if finish_reason == "length":
+        raise TruncatedResponseError(
+            f"{model} hit the output cap mid-response -- raise LLM_MAX_OUTPUT_TOKENS "
+            f"(currently the JSON is cut off and cannot be parsed)"
+        )
+
+    if content.startswith("```"):
+        content = content.strip("`")
+        if content.startswith("json"):
+            content = content[4:]
+    return content.strip()
 
 
 async def _call_with_retry(
@@ -318,12 +426,7 @@ async def _call_with_retry(
                                 model,
                             )
 
-            content = resp.choices[0].message.content or ""
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.strip("`")
-                if content.startswith("json"):
-                    content = content[4:]
+            content = _extract_content(resp, model)
             parsed = json.loads(content)
             parsed = _repair_parsed_json(parsed, schema_cls)
             result = schema_cls.model_validate(parsed)
