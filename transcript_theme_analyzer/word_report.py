@@ -25,7 +25,8 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from .cache import read_cache
-from .report import BatchReport, TranscriptResult, build_report
+from .report import BatchReport, TranscriptResult, build_report, project_theme
+from .themes import Theme
 
 _LINK_COLOR = RGBColor(0x25, 0x6A, 0xBF)  # same blue used for html links/bars
 _FAILED_COLOR = RGBColor(0xD0, 0x3B, 0x3B)  # same red used for the html FAILED badge
@@ -190,6 +191,20 @@ def write_docx_from_data(
     (same shape ``report.write_html_from_data`` takes) — no disk round-trip."""
     report = build_report(theme, transcripts)
     return write_docx(report, out_path, min_score=min_score)
+
+
+def write_theme_docxs(
+    themes: list[Theme],
+    transcripts: dict[str, list[tuple[str, dict]]],
+    out_dir: str,
+) -> list[str]:
+    """Write one Word report per theme to ``out_dir/docx/<theme.id>.docx``
+    (theme ids are filesystem-safe slugs); returns the paths in theme order."""
+    paths = []
+    for theme in themes:
+        report = build_report(theme.name, project_theme(transcripts, theme))
+        paths.append(write_docx(report, os.path.join(out_dir, "docx", f"{theme.id}.docx")))
+    return paths
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

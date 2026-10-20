@@ -220,3 +220,94 @@ def test_transcript_heading_carries_the_matching_bookmark():
         p for p in document.paragraphs if p.style.name == "Heading 2"
     )
     assert 'w:name="t0"' in heading_paragraph._p.xml
+
+
+# --- one Word report per theme -------------------------------------------
+
+def _multi_payload(themes, theme_usage=None, model_used="m1"):
+    return {
+        "model_used": model_used,
+        "chunked": False,
+        "themes": themes,
+        "_meta": {
+            "elapsed_seconds": 2.0,
+            "usage": {"total_tokens": 500},
+            "theme_usage": theme_usage or {},
+        },
+    }
+
+
+def _grace_entry():
+    return {
+        "theme": "Grace",
+        "relevance_score": 80,
+        "explicitness": "explicit",
+        "reasoning": "r",
+        "locations": [{"excerpt": "e1", "title": "First topic"}],
+    }
+
+
+def test_write_theme_docxs_one_file_per_theme(tmp_path):
+    from transcript_theme_analyzer.themes import Theme
+    from transcript_theme_analyzer.word_report import write_theme_docxs
+
+    themes = [Theme(id="grace", name="Grace"), Theme(id="forgiveness", name="Forgiveness")]
+    transcripts = {
+        "ep1": [("m1", _multi_payload(
+            {"grace": _grace_entry(),
+             "forgiveness": {"theme": "Forgiveness", "relevance_score": 0, "explicitness": "none",
+                             "reasoning": "", "locations": []}},
+            {"grace": {"tokens": 120.6, "cost": None}, "forgiveness": {"tokens": 80, "cost": None}},
+        ))],
+        "ep2": [("m1", make_error("m1"))],
+    }
+    out_dir = str(tmp_path)
+    paths = write_theme_docxs(themes, transcripts, out_dir)
+    assert paths == [
+        os.path.join(out_dir, "docx", "grace.docx"),
+        os.path.join(out_dir, "docx", "forgiveness.docx"),
+    ]
+
+    grace = Document(paths[0])
+    assert _headings(grace, 1) == ["Grace"]
+    assert _headings(grace, 2) == ["Transcript: ep1"]
+
+    forgiveness = Document(paths[1])
+    assert _headings(forgiveness, 1) == ["Forgiveness"]
+    assert _headings(forgiveness, 2) == []
+    rows = [[c.text for c in r.cells] for r in forgiveness.tables[0].rows]
+    assert ["ep1", "0"] in rows
+    assert any(r[0].startswith("ep2") and r[1] == "FAILED" for r in rows)
+
+
+def test_project_theme_maps_to_single_theme_shape():
+    from transcript_theme_analyzer.report import project_theme
+    from transcript_theme_analyzer.themes import Theme
+
+    payload = _multi_payload({"grace": _grace_entry()}, {"grace": {"tokens": 120.6, "cost": 0.01}})
+    out = project_theme({"ep1": [("m1", payload)]}, Theme(id="grace", name="Grace"))
+    projected = out["ep1"][0][1]
+    assert out["ep1"][0][0] == "m1"
+    assert projected["relevance_score"] == 80
+    assert projected["reasoning"] == "r"
+    assert projected["locations"] == [{"excerpt": "e1", "title": "First topic"}]
+    assert projected["model_used"] == "m1"
+    assert projected["chunked"] is False
+    assert projected["_meta"]["elapsed_seconds"] == 2.0
+    assert projected["_meta"]["usage"]["total_tokens"] == 121
+
+
+def test_project_theme_missing_theme_and_errors():
+    from transcript_theme_analyzer.report import project_theme
+    from transcript_theme_analyzer.themes import Theme
+
+    err = make_error("m1")
+    payload = {"model_used": "m1", "chunked": False, "themes": {}}  # no _meta at all
+    out = project_theme({"ep1": [("m1", payload)], "ep2": [("m1", err)]},
+                        Theme(id="grace", name="Grace"))
+    assert out["ep1"][0][1] == {"model": "m1", "error": "no result for theme grace"}
+    assert out["ep2"][0][1] == err
+
+    ok = {"model_used": "m1", "chunked": False, "themes": {"grace": _grace_entry()}}
+    projected = project_theme({"ep1": [("m1", ok)]}, Theme(id="grace", name="Grace"))["ep1"][0][1]
+    assert projected["_meta"]["usage"].get("total_tokens") is None

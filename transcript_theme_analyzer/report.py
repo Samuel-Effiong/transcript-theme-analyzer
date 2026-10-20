@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as h
 
 from .cache import read_cache
+from .themes import Theme
 
 
 @dataclass
@@ -97,6 +98,39 @@ def build_report(theme: str, transcripts: dict[str, list[tuple[str, dict]]]) -> 
         transcripts=transcript_results,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     )
+
+
+def _project_payload(model: str, data: dict, theme: Theme) -> dict:
+    if "themes" not in data:
+        return data  # error (or already single-theme) payloads pass through
+    entry = (data.get("themes") or {}).get(theme.id)
+    if entry is None:
+        return {"model": model, "error": f"no result for theme {theme.id}"}
+
+    meta = data.get("_meta", {}) or {}
+    tokens = ((meta.get("theme_usage") or {}).get(theme.id) or {}).get("tokens")
+    return {
+        "relevance_score": entry.get("relevance_score"),
+        "reasoning": entry.get("reasoning", ""),
+        "locations": entry.get("locations", []) or [],
+        "model_used": data.get("model_used"),
+        "chunked": bool(data.get("chunked", False)),
+        "_meta": {
+            "elapsed_seconds": meta.get("elapsed_seconds"),
+            "usage": {"total_tokens": round(tokens) if tokens is not None else None},
+        },
+    }
+
+
+def project_theme(
+    transcripts: dict[str, list[tuple[str, dict]]], theme: Theme
+) -> dict[str, list[tuple[str, dict]]]:
+    """Project multi-theme payloads down to the single-theme shape
+    ``build_report`` reads, for one ``theme``."""
+    return {
+        name: [(model, _project_payload(model, data, theme)) for model, data in payloads]
+        for name, payloads in transcripts.items()
+    }
 
 
 # --------------------------------------------------------------------------
