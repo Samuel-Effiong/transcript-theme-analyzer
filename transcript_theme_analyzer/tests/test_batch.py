@@ -77,8 +77,9 @@ class FakeClient:
     """Records calls and tracks how many ran concurrently. Answers every
     theme listed as ``- id: X`` in the user message, like a real model."""
 
-    def __init__(self, delay=0.01, fail_for=(), score=42):
+    def __init__(self, delay=0.01, fail_for=(), score=42, bad_synthesis=False):
         self.delay = delay
+        self.bad_synthesis = bad_synthesis
         self.fail_for = set(fail_for)
         self.score = score
         self.calls = 0
@@ -100,6 +101,8 @@ class FakeClient:
             ids = _ID_LINE.findall(user)
             if kwargs["messages"][0]["content"] == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2:
                 body = {"themes": [{"theme_id": t, "reasoning": "because"} for t in ids]}
+                if self.bad_synthesis:
+                    body = "unparseable"
             else:
                 body = {"themes": [
                     {
@@ -113,7 +116,10 @@ class FakeClient:
                 ]}
             return types.SimpleNamespace(
                 choices=[types.SimpleNamespace(
-                    message=types.SimpleNamespace(content=json.dumps(body), model_extra={}),
+                    message=types.SimpleNamespace(
+                        content=body if isinstance(body, str) else json.dumps(body),
+                        model_extra={},
+                    ),
                     finish_reason="stop",
                 )],
                 usage=types.SimpleNamespace(
@@ -775,6 +781,36 @@ def test_prices_resolved_once_per_run_and_applied(tmp_path, stub_client, monkeyp
     assert meta["usage"]["cost"] is not None
     assert meta["usage"]["cost_source"] == "prices"
     assert all(t["cost"] is not None for t in meta["theme_usage"].values())
+
+
+def test_failed_run_still_reports_the_calls_it_paid_for(tmp_path, stub_client, monkeypatch):
+    """Chunks succeed, synthesis never parses: the error payload carries the
+    usage of every call made, and the report totals include it."""
+    from transcript_theme_analyzer.run_report import build_run_report
+
+    directory = _write_transcripts(tmp_path, ["a.txt"], body="word " * 180)
+    out = tmp_path / "out"
+    monkeypatch.setattr(cli, "resolve_prices", lambda models, config: {m: Prices(1.0, 2.0) for m in models})
+    client = stub_client(bad_synthesis=True)
+    cfg = _config(single_pass_token_limit=10, chunk_size_tokens=100, chunk_overlap_tokens=10,
+                  max_retries=2)
+    _run(directory, out, cfg)
+
+    _, transcripts = read_cache(str(out / ".raw_results.json"))
+    payload = transcripts["a"][0][1]
+    assert "error" in payload
+    usage = payload["_meta"]["usage"]
+    assert usage["calls"] == client.calls == 3 + 2  # 3 chunks + 2 synthesis attempts
+    assert usage["total_tokens"] == 15 * 5
+    assert usage["cost"] > 0
+    assert set(payload["_meta"]["theme_usage"]) == {"glory"}
+
+    rep = build_run_report(THEMES, transcripts)
+    assert rep.costs.total_tokens == 75
+    assert rep.costs.cost == pytest.approx(usage["cost"])
+    assert rep.rows[0].cells["glory"] is None  # still shown as FAILED
+    assert rep.rows[0].tokens == 75 and rep.rows[0].cost == pytest.approx(usage["cost"])
+    assert rep.costs.per_theme[0].tokens == 75
 
 
 def test_resume_with_nothing_pending_skips_price_lookup(tmp_path, stub_client, _no_price_lookup):

@@ -10,6 +10,7 @@ from transcript_theme_analyzer.aggregate import compute_aggregate_score
 from transcript_theme_analyzer.analyzer import _extract_and_fill_location, _repair_parsed_json
 from transcript_theme_analyzer.chunker import Chunk, chunk_transcript
 from transcript_theme_analyzer.config import Config
+from transcript_theme_analyzer.pricing import Prices
 from transcript_theme_analyzer.schema import AnalysisResult, ChunkAnalysis, LocationMarker
 from transcript_theme_analyzer.themes import Theme
 
@@ -154,13 +155,16 @@ class _FakeCompletions:
     answers for the first ``omit_attempts`` calls (None = always).
     """
 
-    def __init__(self, entry=None, omit=(), omit_attempts=None):
+    def __init__(self, entry=None, omit=(), omit_attempts=None, finish_reason="stop",
+                 bad_synthesis=False):
         self.entry = entry or (lambda tid, n: {
             "theme_id": tid, "relevance_score": 10, "explicitness": "absent",
             "reasoning": f"r {tid}", "locations": [],
         })
         self.omit = set(omit)
         self.omit_attempts = omit_attempts
+        self.finish_reason = finish_reason
+        self.bad_synthesis = bad_synthesis
         self.calls = 0
         self.requests = []
 
@@ -179,10 +183,13 @@ class _FakeCompletions:
             body = {"themes": [
                 self.entry(t, n) for t in ids if not (omitting and t in self.omit)
             ]}
-        msg = SimpleNamespace(content=json.dumps(body), model_extra={})
+        content = json.dumps(body)
+        if self.bad_synthesis and system == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2:
+            content = "not json"
+        msg = SimpleNamespace(content=content, model_extra={})
         usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20, total_tokens=120)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=msg, finish_reason="stop")], usage=usage
+            choices=[SimpleNamespace(message=msg, finish_reason=self.finish_reason)], usage=usage
         )
 
 
@@ -290,3 +297,53 @@ def test_theme_usage_has_every_theme():
     _, stats = asyncio.run(analyzer.analyze(client, "m", THEMES, transcript, cfg))
     assert set(stats.theme_usage()) == {"a", "b", "c"}
     assert all(c.theme_ids == ["a", "b", "c"] for c in stats.calls)
+
+
+# --- Usage accounting for retries and failures -----------------------------
+
+def test_retry_after_missing_themes_is_counted():
+    client, comp = _fake_client(omit={"b"}, omit_attempts=1)
+    _, stats = asyncio.run(analyzer.analyze(client, "m", THEMES, "short transcript", _cfg()))
+    assert comp.calls == 2
+    assert [c.label for c in stats.calls] == ["single_pass", "single_pass/retry1"]
+    # The failed attempt has no usable answer: split evenly over its themes.
+    assert stats.calls[0].theme_ids == ["a", "b", "c"]
+    assert stats.calls[0].theme_output_chars == {}
+    stats.apply_prices(Prices(1.0, 1.0))
+    summary = stats.summary()
+    assert summary["calls"] == 2
+    assert summary["total_tokens"] == 240
+    assert summary["cost"] == pytest.approx(2 * 120 / 1e6)
+    assert sum(u["cost"] for u in stats.theme_usage().values()) == pytest.approx(summary["cost"])
+
+
+def test_failure_after_chunks_succeeded_carries_partial_stats():
+    transcript = "word " * 180
+    cfg = _cfg(single_pass_token_limit=10, chunk_size_tokens=100, chunk_overlap_tokens=10,
+               max_retries=2)
+    client, comp = _fake_client(bad_synthesis=True)
+    with pytest.raises(analyzer.AnalysisFailed) as e:
+        asyncio.run(analyzer.analyze(client, "m", THEMES, transcript, cfg))
+    assert isinstance(e.value, RuntimeError)
+    labels = [c.label for c in e.value.stats.calls]
+    assert sorted(labels) == ["chunk_0", "chunk_1", "chunk_2", "synthesis", "synthesis/retry1"]
+    assert e.value.stats.total_tokens == 5 * 120
+
+
+def test_truncated_response_is_not_retried_and_names_max_themes():
+    client, comp = _fake_client(finish_reason="length")
+    with pytest.raises(analyzer.AnalysisFailed) as e:
+        asyncio.run(analyzer.analyze(client, "m", THEMES, "short transcript", _cfg(max_retries=5)))
+    assert comp.calls == 1
+    assert "ran out of output space answering 3 themes" in str(e.value)
+    assert "MAX_THEMES" in str(e.value)
+    assert e.value.stats.summary()["calls"] == 1
+
+
+def test_truncated_response_with_cap_points_at_the_cap():
+    client, comp = _fake_client(finish_reason="length")
+    with pytest.raises(analyzer.AnalysisFailed, match="LLM_MAX_OUTPUT_TOKENS"):
+        asyncio.run(analyzer.analyze(
+            client, "m", THEMES, "short transcript", _cfg(max_retries=5, max_output_tokens=100)
+        ))
+    assert comp.calls == 1

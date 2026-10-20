@@ -313,7 +313,8 @@ async def run_all(
 ) -> list[tuple[str, dict]]:
     """Run every model against one transcript. Returns a list of
     ``(model, raw_result_payload)`` pairs, in the same order as ``models`` —
-    a failed run's payload is ``{"model": ..., "error": ...}``. ``prices`` is
+    a failed run's payload is ``{"model": ..., "error": ...}``, plus ``_meta``
+    usage when any call was made. ``prices`` is
     the per-model dict from ``resolve_prices`` (None -> costs unknown).
     """
     config = config or load_config()
@@ -346,7 +347,13 @@ async def run_all(
             if not isinstance(result, Exception):
                 raise result
             logger.error("[%s%s] FAILED: %s", label, model, result)
-            raw_results.append((model, {"model": model, "error": str(result)}))
+            error = {"model": model, "error": str(result)}
+            # A run that failed part-way still paid for the calls it made.
+            stats = getattr(result, "stats", None)
+            if stats is not None and stats.calls:
+                stats.apply_prices(prices.get(model))
+                error["_meta"] = {"usage": stats.summary(), "theme_usage": stats.theme_usage()}
+            raw_results.append((model, error))
             continue
         scores = ", ".join(
             f"{tid}={entry['relevance_score']}" for tid, entry in result["themes"].items()

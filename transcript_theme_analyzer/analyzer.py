@@ -474,8 +474,17 @@ def _repair_multi_theme(parsed, themes: list[Theme], entry_cls=ThemeChunkAnalysi
 
 class TruncatedResponseError(Exception):
     """The model hit its output cap mid-JSON. Retrying the identical request
-    usually truncates again, so this carries a pointed message rather than
-    presenting as a generic parse failure."""
+    truncates again, so this is never retried and carries a pointed message
+    rather than presenting as a generic parse failure."""
+
+
+class AnalysisFailed(RuntimeError):
+    """One model's analysis of one transcript failed. ``stats`` holds every
+    call that did return a response, so their cost is still reported."""
+
+    def __init__(self, message: str, stats: "RunStats") -> None:
+        super().__init__(message)
+        self.stats = stats
 
 
 def _extract_content(resp, model: str) -> str:
@@ -542,8 +551,15 @@ async def _call_with_retry(
     gate: "RequestGate | None" = None,
     repair: Callable[[Any], Any] | None = None,
     extra_body: dict | None = None,
+    stats: "RunStats | None" = None,
+    call_label: str = "",
+    theme_ids: list[str] = (),
 ):
     """Call the chat completions API, enforcing the schema.
+
+    Every attempt that got a response back is a paid call, so each is logged
+    to ``stats`` (retries as ``<call_label>/retryN``). A failed attempt has no
+    usable answer to split output cost by, so its themes share it evenly.
 
     Tries native structured output (response_format=json_schema) first; if
     the provider/model rejects that parameter, falls back to a plain call
@@ -574,8 +590,21 @@ async def _call_with_retry(
             ],
         )
 
+    def _record(attempt: int, resp, entries=()) -> None:
+        if stats is None:
+            return
+        label_n = call_label if attempt == 0 else f"{call_label}/retry{attempt}"
+        stats.add(
+            label_n,
+            model,
+            getattr(resp, "usage", None),
+            theme_ids=theme_ids,
+            theme_output_chars=_theme_output_chars(entries),
+        )
+
     last_exc: Exception | None = None
     for attempt in range(max_retries):
+        resp = None
         try:
             # The gate is held across the structured-output attempt and its
             # fallback so the pair counts as one unit of concurrency.
@@ -617,7 +646,18 @@ async def _call_with_retry(
             parsed = json.loads(content)
             parsed = repair(parsed)
             result = schema_cls.model_validate(parsed)
+            _record(attempt, resp, getattr(result, "themes", ()))
             return result, resp.usage
+        except TruncatedResponseError as exc:
+            _record(attempt, resp)
+            if max_output_tokens is None:
+                # No cap of ours: the model's own output ceiling, which the
+                # same request hits every time.
+                raise TruncatedResponseError(
+                    f"{model} ran out of output space answering {len(theme_ids)} themes "
+                    f"— lower MAX_THEMES or use a model with a larger output limit"
+                ) from exc
+            raise
         except RETRYABLE_EXCEPTIONS as exc:
             last_exc = exc
             # Exponential backoff, jittered so concurrent workers that were
@@ -643,6 +683,9 @@ async def _call_with_retry(
             raise
         except (json.JSONDecodeError, Exception) as exc:  # noqa: BLE001 - parse/validation retry
             last_exc = exc
+            # Only a response that reports usage can have been charged.
+            if getattr(resp, "usage", None) is not None:
+                _record(attempt, resp)
             logger.warning(
                 "[%s] Parse/validation error on attempt %d/%d: %s",
                 label, attempt + 1, max_retries, exc,
@@ -675,7 +718,7 @@ async def _analyze_single_pass(
     user = prompts.MULTI_SINGLE_PASS_USER_TEMPLATE.format(
         theme_block=prompts.format_theme_block(themes), transcript=transcript
     )
-    result, usage = await _call_with_retry(
+    result, _ = await _call_with_retry(
         client,
         model=model,
         system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
@@ -688,13 +731,9 @@ async def _analyze_single_pass(
         gate=gate,
         repair=lambda p: _repair_multi_theme(p, themes),
         extra_body=openrouter_extra_body(config),
-    )
-    stats.add(
-        "single_pass",
-        model,
-        usage,
+        stats=stats,
+        call_label="single_pass",
         theme_ids=[t.id for t in themes],
-        theme_output_chars=_theme_output_chars(result.themes),
     )
     if progress:
         progress.note("single-pass call complete")
@@ -753,7 +792,7 @@ async def _analyze_one_chunk(
             char_end=chunk.char_end,
             chunk_text=chunk.text,
         )
-        result, usage = await _call_with_retry(
+        result, _ = await _call_with_retry(
             client,
             model=model,
             system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
@@ -766,13 +805,9 @@ async def _analyze_one_chunk(
             gate=gate,
             repair=lambda p: _repair_multi_theme(p, themes),
             extra_body=openrouter_extra_body(config),
-        )
-        stats.add(
-            f"chunk_{chunk.index}",
-            model,
-            usage,
+            stats=stats,
+            call_label=f"chunk_{chunk.index}",
             theme_ids=[t.id for t in themes],
-            theme_output_chars=_theme_output_chars(result.themes),
         )
         if progress:
             progress.step()
@@ -810,7 +845,7 @@ async def _synthesize_reasoning(
         f"THEMES:\n{prompts.format_theme_block(themes)}\n\n" + "\n\n".join(sections)
     )
 
-    result, usage = await _call_with_retry(
+    result, _ = await _call_with_retry(
         client,
         model=model,
         system=prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2,
@@ -823,13 +858,9 @@ async def _synthesize_reasoning(
         gate=gate,
         repair=lambda p: _repair_multi_theme(p, themes, entry_cls=ThemeSynthesis),
         extra_body=openrouter_extra_body(config),
-    )
-    stats.add(
-        "synthesis",
-        model,
-        usage,
+        stats=stats,
+        call_label="synthesis",
         theme_ids=[t.id for t in themes],
-        theme_output_chars=_theme_output_chars(result.themes),
     )
     return {entry.theme_id: entry.reasoning for entry in result.themes}
 
@@ -872,7 +903,13 @@ async def _analyze_map_reduce(
         )
         for chunk in chunks
     ]
-    chunk_results = await asyncio.gather(*tasks)
+    # Let every chunk finish before failing: a sibling still in flight is
+    # paid for either way, and only a finished one has its usage recorded.
+    gathered = await asyncio.gather(*tasks, return_exceptions=True)
+    for outcome in gathered:
+        if isinstance(outcome, BaseException):
+            raise outcome
+    chunk_results = gathered
     lengths = [c.char_end - c.char_start for _, c in chunk_results]
 
     # Per theme: score, passages and explicitness, each from that theme's own
@@ -932,12 +969,16 @@ async def analyze(
     theme order."""
     stats = RunStats()
     estimated_tokens = estimate_tokens(transcript)
-    if estimated_tokens <= config.single_pass_token_limit:
-        results = await _analyze_single_pass(
-            client, model, themes, transcript, config, stats, progress, gate
-        )
-    else:
-        results = await _analyze_map_reduce(
-            client, model, themes, transcript, config, stats, progress, gate
-        )
+    try:
+        if estimated_tokens <= config.single_pass_token_limit:
+            results = await _analyze_single_pass(
+                client, model, themes, transcript, config, stats, progress, gate
+            )
+        else:
+            results = await _analyze_map_reduce(
+                client, model, themes, transcript, config, stats, progress, gate
+            )
+    except Exception as exc:
+        # Carry the calls that were made (and paid for) out with the failure.
+        raise AnalysisFailed(str(exc), stats) from exc
     return results, stats
