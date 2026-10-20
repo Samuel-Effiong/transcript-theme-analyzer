@@ -25,6 +25,11 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+def _optional_float(name: str) -> float | None:
+    value = os.environ.get(name, "").strip()
+    return float(value) if value else None
+
+
 class Config(BaseModel):
     provider: str = Field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "openrouter"))
     base_url: str = Field(
@@ -84,6 +89,21 @@ class Config(BaseModel):
     max_output_tokens: int | None = Field(
         default_factory=lambda: int(os.environ.get("LLM_MAX_OUTPUT_TOKENS") or 0) or None
     )
+    # Most themes one run may analyze; the CLI rejects more before any API call.
+    max_themes: int = Field(
+        default_factory=lambda: int(os.environ.get("MAX_THEMES", "5"))
+    )
+    # USD per 1M tokens, used to cost a run when the provider reports no cost.
+    # Unset or empty -> None (cost shown as n/a, never $0.00).
+    price_input_per_m: float | None = Field(
+        default_factory=lambda: _optional_float("LLM_PRICE_INPUT_PER_M")
+    )
+    price_cached_input_per_m: float | None = Field(
+        default_factory=lambda: _optional_float("LLM_PRICE_CACHED_INPUT_PER_M")
+    )
+    price_output_per_m: float | None = Field(
+        default_factory=lambda: _optional_float("LLM_PRICE_OUTPUT_PER_M")
+    )
     # Per-request ceiling. The SDK's own default is 600s, long enough for one
     # hung call to hold a concurrency slot for ten minutes.
     request_timeout_seconds: float = Field(
@@ -105,6 +125,7 @@ class Config(BaseModel):
         self.max_concurrent_chunks = max(1, self.max_concurrent_chunks)
         self.max_concurrent_transcripts = max(1, self.max_concurrent_transcripts)
         self.max_concurrent_requests = max(1, self.max_concurrent_requests)
+        self.max_themes = max(1, self.max_themes)
         self.max_retries = max(1, self.max_retries)
         self.sdk_max_retries = max(0, self.sdk_max_retries)
         self.request_timeout_seconds = max(1.0, self.request_timeout_seconds)
