@@ -77,8 +77,12 @@ class Config(BaseModel):
     max_retries: int = Field(
         default_factory=lambda: int(os.environ.get("LLM_MAX_RETRIES", "5"))
     )
-    max_output_tokens: int = Field(
-        default_factory=lambda: int(os.environ.get("LLM_MAX_OUTPUT_TOKENS", "4096"))
+    # None (the default) sends no cap at all, leaving the model its full output
+    # budget -- a cap only ever truncates an answer, never improves one. Set
+    # LLM_MAX_OUTPUT_TOKENS only if a provider insists on one (e.g. OpenRouter
+    # 402s when the model's maximum exceeds the account's remaining credit).
+    max_output_tokens: int | None = Field(
+        default_factory=lambda: int(os.environ.get("LLM_MAX_OUTPUT_TOKENS") or 0) or None
     )
     # Per-request ceiling. The SDK's own default is 600s, long enough for one
     # hung call to hold a concurrency slot for ten minutes.

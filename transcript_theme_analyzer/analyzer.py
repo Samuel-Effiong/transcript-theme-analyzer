@@ -334,14 +334,14 @@ def _extract_content(resp, model: str) -> str:
         extra = getattr(getattr(choice, "message", None), "model_extra", None) or {}
         if extra.get("reasoning") or extra.get("reasoning_content"):
             raise TruncatedResponseError(
-                f"{model} returned reasoning but no answer content -- raise "
+                f"{model} returned reasoning but no answer content -- raise or unset "
                 f"LLM_MAX_OUTPUT_TOKENS or use a non-reasoning model"
             )
         raise RuntimeError(f"{model} returned empty content (finish_reason={finish_reason!r})")
 
     if finish_reason == "length":
         raise TruncatedResponseError(
-            f"{model} hit the output cap mid-response -- raise LLM_MAX_OUTPUT_TOKENS "
+            f"{model} hit the output cap mid-response -- raise or unset LLM_MAX_OUTPUT_TOKENS "
             f"(currently the JSON is cut off and cannot be parsed)"
         )
 
@@ -361,7 +361,7 @@ async def _call_with_retry(
     schema_cls,
     schema_name: str,
     max_retries: int,
-    max_output_tokens: int,
+    max_output_tokens: int | None,
     label: str = "",
     gate: "RequestGate | None" = None,
 ):
@@ -373,10 +373,14 @@ async def _call_with_retry(
     later calls skip straight to the fallback rather than re-paying the
     failed round trip every time.
     """
+    # No cap configured: omit the parameter entirely so the model's own
+    # maximum applies, rather than sending some arbitrary large number.
+    max_tokens = max_output_tokens or openai.NOT_GIVEN
+
     async def _plain_call():
         return await client.chat.completions.create(
             model=model,
-            max_tokens=max_output_tokens,
+            max_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": system},
                 {
@@ -400,7 +404,7 @@ async def _call_with_retry(
                     try:
                         resp = await client.chat.completions.create(
                             model=model,
-                            max_tokens=max_output_tokens,
+                            max_tokens=max_tokens,
                             messages=[
                                 {"role": "system", "content": system},
                                 {"role": "user", "content": user},
