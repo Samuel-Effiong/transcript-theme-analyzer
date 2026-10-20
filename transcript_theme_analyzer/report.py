@@ -137,6 +137,149 @@ def project_theme(
 # HTML
 # --------------------------------------------------------------------------
 
+BASE_CSS = r"""
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --seq-300: #6da7ec;
+    --seq-500: #256abf;
+    --seq-700: #0d366b;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --border: rgba(255,255,255,0.10);
+      --seq-300: #5598e7;
+      --seq-500: #2a78d6;
+      --seq-700: #3987e5;
+      --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --seq-300: #5598e7;
+    --seq-500: #2a78d6;
+    --seq-700: #3987e5;
+    --critical: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--text-secondary); margin-top: 0; }
+  .stats { display: flex; gap: 1.5rem; margin: 1.25rem 0; flex-wrap: wrap; }
+  .stat { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }
+  .stat .num { font-size: 1.4rem; font-weight: 600; display: block; }
+  .stat .label { font-size: 0.8rem; color: var(--text-secondary); }
+  .filter-bar { margin: 1.5rem 0 0.75rem; }
+  .filter-bar input {
+    width: 100%;
+    font-size: 0.95rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+  }
+  .filter-bar input:focus { outline: 2px solid var(--seq-500); outline-offset: 1px; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--grid); font-size: 0.9rem; }
+  th { color: var(--text-secondary); font-weight: 600; cursor: pointer; user-select: none; }
+  th:hover { color: var(--text-primary); }
+  th.sort-active::after { content: " \25BC"; font-size: 0.7em; }
+  tr:last-child td { border-bottom: none; }
+  .col-rank { width: 3rem; color: var(--muted); }
+  .col-score { width: 4rem; font-variant-numeric: tabular-nums; text-align: right; }
+  .col-bar { width: 35%; }
+  .col-name a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--border); }
+  .col-name a:hover { border-bottom-color: var(--seq-500); color: var(--seq-500); }
+  .bar-track { height: 10px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .badge { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.4rem; }
+  .badge-error { background: var(--critical); color: #fff; }
+  .score-pill { font-variant-numeric: tabular-nums; background: var(--seq-500); color: #fff; border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.85rem; margin-left: 0.5rem; }
+  .no-matches { text-align: center; color: var(--muted); padding: 1.5rem !important; }
+  h2 { font-size: 1.15rem; margin-top: 2.5rem; }
+  .transcript-detail { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.6rem; padding: 0.6rem 1rem; scroll-margin-top: 1rem; }
+  .transcript-detail summary { cursor: pointer; font-weight: 600; padding: 0.4rem 0.1rem; }
+  .detail-body { margin-top: 0.75rem; }
+  .run-meta { color: var(--text-secondary); font-size: 0.85rem; }
+  .reasoning { line-height: 1.5; }
+  .locations { list-style: none; padding: 0; margin: 0; }
+  .locations li { padding: 0.5rem 0; border-top: 1px solid var(--grid); }
+  .locations li:first-child { border-top: none; }
+  .loc-title { font-weight: 600; display: block; margin-bottom: 0.15rem; }
+  .loc-meta { font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.3rem; }
+  blockquote { margin: 0.2rem 0; padding-left: 0.75rem; border-left: 2px solid var(--seq-500); color: var(--text-primary); }
+  blockquote p { margin: 0 0 0.6rem; }
+  blockquote p:last-child { margin-bottom: 0; }
+  .chip { display: inline-block; background: var(--grid); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; margin: 0 0.3rem 0.3rem 0; }
+  .other-models { margin: 0.5rem 0; }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  code { background: var(--grid); border-radius: 4px; padding: 0.05rem 0.3rem; }
+
+  @media (max-width: 640px) {
+    body { padding: 1.25rem 0.75rem 3rem; }
+    .stats { gap: 0.6rem; }
+    .stat { flex: 1 1 40%; padding: 0.6rem 0.75rem; }
+    table, thead, tbody, th, td, tr { display: block; }
+    thead { position: absolute; left: -9999px; top: -9999px; }
+    tbody tr {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.6rem;
+      padding: 0.35rem 0.75rem;
+    }
+    tbody tr:last-child { margin-bottom: 0; }
+    td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 1px solid var(--grid);
+      padding: 0.5rem 0;
+    }
+    td:last-child { border-bottom: none; }
+    td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .col-bar { flex-direction: column; align-items: stretch; }
+    .col-bar .bar-track { width: 100%; margin-top: 0.25rem; }
+    .col-name { text-align: right; }
+  }
+"""
+
+
 def _bar_color_var(score: int) -> str:
     """Sequential single-hue (blue) bucket: low scores recede toward the
     surface, high scores get the strongest step — per the dataviz sequential
@@ -256,145 +399,7 @@ def render_html(report: BatchReport, top_locations: int = 5) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Theme Analysis: {h(report.theme)}</title>
 <style>
-  :root {{
-    color-scheme: light;
-    --surface-1: #fcfcfb;
-    --page: #f9f9f7;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --muted: #898781;
-    --grid: #e1e0d9;
-    --border: rgba(11,11,11,0.10);
-    --seq-300: #6da7ec;
-    --seq-500: #256abf;
-    --seq-700: #0d366b;
-    --critical: #d03b3b;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root:where(:not([data-theme="light"])) {{
-      color-scheme: dark;
-      --surface-1: #1a1a19;
-      --page: #0d0d0d;
-      --text-primary: #ffffff;
-      --text-secondary: #c3c2b7;
-      --muted: #898781;
-      --grid: #2c2c2a;
-      --border: rgba(255,255,255,0.10);
-      --seq-300: #5598e7;
-      --seq-500: #2a78d6;
-      --seq-700: #3987e5;
-      --critical: #e66767;
-    }}
-  }}
-  :root[data-theme="dark"] {{
-    color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --border: rgba(255,255,255,0.10);
-    --seq-300: #5598e7;
-    --seq-500: #2a78d6;
-    --seq-700: #3987e5;
-    --critical: #e66767;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0;
-    padding: 2rem 1rem 4rem;
-    background: var(--page);
-    color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }}
-  .wrap {{ max-width: 900px; margin: 0 auto; }}
-  h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
-  .subtitle {{ color: var(--text-secondary); margin-top: 0; }}
-  .stats {{ display: flex; gap: 1.5rem; margin: 1.25rem 0; flex-wrap: wrap; }}
-  .stat {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; }}
-  .stat .num {{ font-size: 1.4rem; font-weight: 600; display: block; }}
-  .stat .label {{ font-size: 0.8rem; color: var(--text-secondary); }}
-  .filter-bar {{ margin: 1.5rem 0 0.75rem; }}
-  .filter-bar input {{
-    width: 100%;
-    font-size: 0.95rem;
-    padding: 0.6rem 0.85rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-1);
-    color: var(--text-primary);
-  }}
-  .filter-bar input:focus {{ outline: 2px solid var(--seq-500); outline-offset: 1px; }}
-  table {{ width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
-  th, td {{ padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--grid); font-size: 0.9rem; }}
-  th {{ color: var(--text-secondary); font-weight: 600; cursor: pointer; user-select: none; }}
-  th:hover {{ color: var(--text-primary); }}
-  th.sort-active::after {{ content: " \\25BC"; font-size: 0.7em; }}
-  tr:last-child td {{ border-bottom: none; }}
-  .col-rank {{ width: 3rem; color: var(--muted); }}
-  .col-score {{ width: 4rem; font-variant-numeric: tabular-nums; text-align: right; }}
-  .col-bar {{ width: 35%; }}
-  .col-name a {{ color: inherit; text-decoration: none; border-bottom: 1px solid var(--border); }}
-  .col-name a:hover {{ border-bottom-color: var(--seq-500); color: var(--seq-500); }}
-  .bar-track {{ height: 10px; background: var(--grid); border-radius: 4px; overflow: hidden; }}
-  .bar-fill {{ height: 100%; border-radius: 4px; }}
-  .badge {{ font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.4rem; }}
-  .badge-error {{ background: var(--critical); color: #fff; }}
-  .score-pill {{ font-variant-numeric: tabular-nums; background: var(--seq-500); color: #fff; border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.85rem; margin-left: 0.5rem; }}
-  .no-matches {{ text-align: center; color: var(--muted); padding: 1.5rem !important; }}
-  h2 {{ font-size: 1.15rem; margin-top: 2.5rem; }}
-  .transcript-detail {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.6rem; padding: 0.6rem 1rem; scroll-margin-top: 1rem; }}
-  .transcript-detail summary {{ cursor: pointer; font-weight: 600; padding: 0.4rem 0.1rem; }}
-  .detail-body {{ margin-top: 0.75rem; }}
-  .run-meta {{ color: var(--text-secondary); font-size: 0.85rem; }}
-  .reasoning {{ line-height: 1.5; }}
-  .locations {{ list-style: none; padding: 0; margin: 0; }}
-  .locations li {{ padding: 0.5rem 0; border-top: 1px solid var(--grid); }}
-  .locations li:first-child {{ border-top: none; }}
-  .loc-title {{ font-weight: 600; display: block; margin-bottom: 0.15rem; }}
-  .loc-meta {{ font-size: 0.75rem; color: var(--muted); display: block; margin-bottom: 0.3rem; }}
-  blockquote {{ margin: 0.2rem 0; padding-left: 0.75rem; border-left: 2px solid var(--seq-500); color: var(--text-primary); }}
-  blockquote p {{ margin: 0 0 0.6rem; }}
-  blockquote p:last-child {{ margin-bottom: 0; }}
-  .chip {{ display: inline-block; background: var(--grid); border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; margin: 0 0.3rem 0.3rem 0; }}
-  .other-models {{ margin: 0.5rem 0; }}
-  .muted {{ color: var(--muted); font-size: 0.85rem; }}
-  code {{ background: var(--grid); border-radius: 4px; padding: 0.05rem 0.3rem; }}
-
-  @media (max-width: 640px) {{
-    body {{ padding: 1.25rem 0.75rem 3rem; }}
-    .stats {{ gap: 0.6rem; }}
-    .stat {{ flex: 1 1 40%; padding: 0.6rem 0.75rem; }}
-    table, thead, tbody, th, td, tr {{ display: block; }}
-    thead {{ position: absolute; left: -9999px; top: -9999px; }}
-    tbody tr {{
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin-bottom: 0.6rem;
-      padding: 0.35rem 0.75rem;
-    }}
-    tbody tr:last-child {{ margin-bottom: 0; }}
-    td {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      border-bottom: 1px solid var(--grid);
-      padding: 0.5rem 0;
-    }}
-    td:last-child {{ border-bottom: none; }}
-    td::before {{
-      content: attr(data-label);
-      font-weight: 600;
-      color: var(--text-secondary);
-      font-size: 0.8rem;
-      flex-shrink: 0;
-    }}
-    .col-bar {{ flex-direction: column; align-items: stretch; }}
-    .col-bar .bar-track {{ width: 100%; margin-top: 0.25rem; }}
-    .col-name {{ text-align: right; }}
-  }}
+{BASE_CSS}
 </style>
 </head>
 <body>
