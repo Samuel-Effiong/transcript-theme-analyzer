@@ -25,6 +25,9 @@ import logging
 import os
 import tempfile
 
+from . import prompts
+from .themes import Theme
+
 CHECKPOINT_FILENAME = ".checkpoint.jsonl"
 
 logger = logging.getLogger("transcript_theme_analyzer")
@@ -34,10 +37,19 @@ def checkpoint_path(out_dir: str) -> str:
     return os.path.join(out_dir, CHECKPOINT_FILENAME)
 
 
-def _signature(theme: str, models: list[str]) -> str:
-    """Results are only reusable for the same theme and model set; anything
-    else is a different question and must be re-analyzed."""
-    return json.dumps({"theme": theme, "models": sorted(models)}, sort_keys=True)
+def _signature(themes: list[Theme], models: list[str]) -> str:
+    """Results are only reusable for the same theme set, model set and prompt
+    version; anything else is a different question and must be re-analyzed.
+    Order is irrelevant (the same set is the same work), but a changed
+    description changes what the model is asked, so it counts."""
+    return json.dumps(
+        {
+            "themes": sorted([t.id, t.name, t.description] for t in themes),
+            "models": sorted(models),
+            "prompt": prompts.PROMPT_VERSION,
+        },
+        sort_keys=True,
+    )
 
 
 class CheckpointWriter:
@@ -45,9 +57,9 @@ class CheckpointWriter:
     immediately so an abrupt kill (Colab timeout, closed tab) loses at most
     the transcript currently in flight."""
 
-    def __init__(self, path: str, theme: str, models: list[str]) -> None:
+    def __init__(self, path: str, themes: list[Theme], models: list[str]) -> None:
         self.path = path
-        self.signature = _signature(theme, models)
+        self.signature = _signature(themes, models)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self._fh = open(path, "a", encoding="utf-8")
 
@@ -81,7 +93,7 @@ class CheckpointWriter:
         self.close()
 
 
-def read_checkpoint(path: str, theme: str, models: list[str]) -> dict[str, dict]:
+def read_checkpoint(path: str, themes: list[Theme], models: list[str]) -> dict[str, dict]:
     """Load previously completed transcripts for this exact theme/model set.
 
     Returns ``{key: {"display_name": str, "results": [(model, payload), ...]}}``.
@@ -94,7 +106,7 @@ def read_checkpoint(path: str, theme: str, models: list[str]) -> dict[str, dict]
     if not os.path.isfile(path):
         return {}
 
-    wanted = _signature(theme, models)
+    wanted = _signature(themes, models)
     done: dict[str, dict] = {}
     skipped_other = 0
     skipped_bad = 0
@@ -137,13 +149,13 @@ def has_error(results: list[tuple[str, dict]]) -> bool:
     return any("error" in payload for _, payload in results)
 
 
-def compact(path: str, theme: str, models: list[str]) -> int:
+def compact(path: str, themes: list[Theme], models: list[str]) -> int:
     """Rewrite the checkpoint with one line per key, dropping superseded and
     unusable records. Purely housekeeping -- returns the surviving count."""
-    done = read_checkpoint(path, theme, models)
+    done = read_checkpoint(path, themes, models)
     if not done:
         return 0
-    signature = _signature(theme, models)
+    signature = _signature(themes, models)
     directory = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
     try:

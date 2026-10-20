@@ -1,15 +1,18 @@
 import json
 import os
 
+from transcript_theme_analyzer import prompts
 from transcript_theme_analyzer.checkpoint import (
     CheckpointWriter,
+    _signature,
     checkpoint_path,
     compact,
     has_error,
     read_checkpoint,
 )
+from transcript_theme_analyzer.themes import Theme
 
-THEME = "the glory of God"
+THEME = [Theme("glory", "the glory of God")]
 MODELS = ["model-a"]
 
 
@@ -34,7 +37,7 @@ def test_ignores_other_theme_and_model_set(tmp_path):
     with CheckpointWriter(path, THEME, MODELS) as writer:
         writer.record("a.txt", "a", [("model-a", _payload())])
 
-    assert read_checkpoint(path, "a different theme", MODELS) == {}
+    assert read_checkpoint(path, [Theme("other", "a different theme")], MODELS) == {}
     assert read_checkpoint(path, THEME, ["model-b"]) == {}
     # Model order must not matter -- the same set is the same work.
     with CheckpointWriter(path, THEME, ["y", "x"]) as writer:
@@ -113,3 +116,33 @@ def test_unicode_survives(tmp_path):
         writer.record("é.txt", "é", [("model-a", payload)])
     done = read_checkpoint(path, THEME, MODELS)
     assert done["é.txt"]["results"][0][1]["reasoning"] == "café — ✝ 你好"
+
+
+def test_signature_ignores_theme_and_model_order():
+    a, b = Theme("a", "Alpha", "x"), Theme("b", "Beta")
+    assert _signature([a, b], ["m1", "m2"]) == _signature([b, a], ["m2", "m1"])
+
+
+def test_signature_covers_description_name_id_and_prompt_version(monkeypatch):
+    base = _signature([Theme("a", "Alpha", "x")], MODELS)
+    assert base != _signature([Theme("a", "Alpha", "y")], MODELS)
+    assert base != _signature([Theme("a", "Alpha2", "x")], MODELS)
+    assert base != _signature([Theme("a2", "Alpha", "x")], MODELS)
+    assert json.loads(base) == {
+        "themes": [["a", "Alpha", "x"]],
+        "models": ["model-a"],
+        "prompt": prompts.PROMPT_VERSION,
+    }
+    monkeypatch.setattr(prompts, "PROMPT_VERSION", "multi-v999")
+    assert base != _signature([Theme("a", "Alpha", "x")], MODELS)
+
+
+def test_old_single_theme_records_are_not_reused(tmp_path):
+    """A record written under the old {"theme": str} signature is a
+    different question and must be re-analyzed."""
+    path = checkpoint_path(str(tmp_path))
+    old_sig = json.dumps({"theme": "the glory of God", "models": MODELS}, sort_keys=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"signature": old_sig, "key": "a.txt", "display_name": "a",
+                             "results": [{"model": "model-a", "payload": _payload()}]}) + "\n")
+    assert read_checkpoint(path, THEME, MODELS) == {}

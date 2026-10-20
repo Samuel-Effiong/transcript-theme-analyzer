@@ -1,12 +1,14 @@
-"""CLI: run one theme against one or many .txt/.docx transcripts and one or
-many models, producing exactly two output files: report.html and report.docx.
+"""CLI: run one or more themes against one or many .txt/.docx transcripts and
+one or many models. Every theme goes in the same call per transcript (or per
+chunk). Outputs: report.html (the whole run) and docx/<theme_id>.docx (one per
+theme).
 
 Usage (single transcript):
     python -m transcript_theme_analyzer.cli --transcript path.docx --theme "the glory of God" \\
-        --models gpt-4.1 anthropic/claude-sonnet-5
+        --theme "forgiveness" --models gpt-4.1 anthropic/claude-sonnet-5
 
-Usage (whole folder of transcripts against the same theme):
-    python -m transcript_theme_analyzer.cli --transcript-dir transcripts/ --theme "forgiveness" \\
+Usage (whole folder of transcripts against the same themes):
+    python -m transcript_theme_analyzer.cli --transcript-dir transcripts/ --themes-file themes.csv \\
         --models anthropic/claude-sonnet-5
 
 Large batches resume automatically: completed transcripts are checkpointed as
@@ -30,8 +32,10 @@ from .checkpoint import CheckpointWriter, checkpoint_path, has_error, read_check
 from .client import make_client
 from .config import load_config
 from .loader import SUPPORTED_EXTENSIONS, detect_format, load_transcript_text
-from .report import write_html_from_data
-from .word_report import write_docx_from_data
+from .pricing import resolve_prices
+from .run_report import write_run_html
+from .themes import Theme, ThemeInputError, build_themes, check_theme_limit, read_themes_file
+from .word_report import write_theme_docxs
 
 DEFAULT_GLOB_PATTERNS = ["*.txt", "*.docx"]
 
@@ -44,14 +48,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     source.add_argument("--transcript", help="Path to a single transcript file (.txt or .docx)")
     source.add_argument(
         "--transcript-dir",
-        help="Directory of transcript files (.txt and/or .docx) to run the same theme against",
+        help="Directory of transcript files (.txt and/or .docx) to run the same themes against",
     )
     parser.add_argument(
         "--glob",
         default=None,
         help="Filename pattern to match inside --transcript-dir (default: *.txt and *.docx)",
     )
-    parser.add_argument("--theme", required=True, help="Theme to analyze for (word, phrase, or paragraph)")
+    parser.add_argument(
+        "--theme",
+        action="append",
+        default=[],
+        help="Theme to analyze for (word, phrase, or paragraph). Repeat for several themes",
+    )
+    parser.add_argument(
+        "--themes-file",
+        default=None,
+        help="CSV with a 'theme' column and an optional 'description' column. "
+        "Combines with --theme (those come first)",
+    )
+    parser.add_argument(
+        "--max-themes",
+        type=int,
+        default=None,
+        help="Most themes allowed in one run (default: MAX_THEMES or 5)",
+    )
     parser.add_argument(
         "--models",
         nargs="+",
@@ -61,7 +82,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         default="results",
-        help="Directory to write the report (report.html, report.docx) into",
+        help="Directory to write the reports (report.html, docx/<theme_id>.docx) into",
     )
     parser.add_argument(
         "--limit",
@@ -239,41 +260,72 @@ def _build_work_items(paths: list[str], base_dir: str | None) -> list[WorkItem]:
 
 
 async def run_one_model(
-    transcript: str, theme: str, model: str, config, client, label: str = "", gate=None
+    transcript: str,
+    themes: list[Theme],
+    model: str,
+    config,
+    client,
+    label: str = "",
+    gate=None,
+    prices=None,
 ) -> dict:
+    """Analyze every theme with one model. Returns the multi-theme payload:
+    shared run facts at the top, one entry per theme id (in theme order)
+    under ``themes``, and usage/cost under ``_meta``."""
     start = time.monotonic()
     progress = Progress(label=f"{label}{model}" if label else model)
-    result, stats = await analyze(client, model, theme, transcript, config, progress, gate)
+    results, stats = await analyze(client, model, themes, transcript, config, progress, gate)
     elapsed = time.monotonic() - start
     progress.note(f"finished in {elapsed:.0f}s ({stats.total_tokens:,} tokens)")
-    payload = result.model_dump()
-    payload["_meta"] = {
-        "elapsed_seconds": round(elapsed, 2),
-        "usage": stats.summary(),
+    # Before summary()/theme_usage(): both read the costs this fills in.
+    stats.apply_prices(prices)
+    first = results[0]
+    return {
+        "model_used": first.model_used,
+        "chunked": first.chunked,
+        "themes": {
+            r.theme_id: {
+                "theme": r.theme,
+                "relevance_score": r.relevance_score,
+                "explicitness": r.explicitness,
+                "reasoning": r.reasoning,
+                "locations": [loc.model_dump() for loc in r.locations],
+            }
+            for r in results
+        },
+        "_meta": {
+            "elapsed_seconds": round(elapsed, 2),
+            "usage": stats.summary(),
+            "theme_usage": stats.theme_usage(),
+        },
     }
-    return payload
 
 
 async def run_all(
     transcript: str,
-    theme: str,
+    themes: list[Theme],
     models: list[str],
     label: str = "",
     config=None,
     client=None,
     gate=None,
+    prices: dict | None = None,
 ) -> list[tuple[str, dict]]:
     """Run every model against one transcript. Returns a list of
     ``(model, raw_result_payload)`` pairs, in the same order as ``models`` —
-    a failed run's payload is ``{"model": ..., "error": ...}``.
+    a failed run's payload is ``{"model": ..., "error": ...}``. ``prices`` is
+    the per-model dict from ``resolve_prices`` (None -> costs unknown).
     """
     config = config or load_config()
+    prices = prices or {}
     owns_client = client is None
     client = client or make_client(config)
     try:
         results = await asyncio.gather(
             *[
-                run_one_model(transcript, theme, model, config, client, label, gate)
+                run_one_model(
+                    transcript, themes, model, config, client, label, gate, prices.get(model)
+                )
                 for model in models
             ],
             return_exceptions=True,
@@ -296,24 +348,29 @@ async def run_all(
             logger.error("[%s%s] FAILED: %s", label, model, result)
             raw_results.append((model, {"model": model, "error": str(result)}))
             continue
-        logger.info("[%s%s] score=%s", label, model, result["relevance_score"])
+        scores = ", ".join(
+            f"{tid}={entry['relevance_score']}" for tid, entry in result["themes"].items()
+        )
+        logger.info("[%s%s] scores: %s", label, model, scores)
         raw_results.append((model, result))
     return raw_results
 
 
-def _write_outputs(theme: str, raw_by_transcript: dict[str, list[tuple[str, dict]]], out_dir: str) -> None:
+def _write_outputs(
+    themes: list[Theme], raw_by_transcript: dict[str, list[tuple[str, dict]]], out_dir: str
+) -> None:
     if not raw_by_transcript:
         print("No results to report — nothing was analyzed.", file=sys.stderr)
         return
 
-    cache_path = write_cache(theme, raw_by_transcript, out_dir)
+    cache_path = write_cache(themes, raw_by_transcript, out_dir)
     print(f"[cache] {cache_path} (internal — not a final output)")
 
-    html_path = write_html_from_data(theme, raw_by_transcript, os.path.join(out_dir, "report.html"))
+    html_path = write_run_html(themes, raw_by_transcript, os.path.join(out_dir, "report.html"))
     print(f"[report:html] {html_path}")
 
-    docx_path = write_docx_from_data(theme, raw_by_transcript, os.path.join(out_dir, "report.docx"))
-    print(f"[report:docx] {docx_path}")
+    for docx_path in write_theme_docxs(themes, raw_by_transcript, out_dir):
+        print(f"[report:docx] {docx_path}")
 
 
 def _format_duration(seconds: float) -> str:
@@ -329,13 +386,14 @@ def _format_duration(seconds: float) -> str:
 
 async def _analyze_item(
     item: WorkItem,
-    theme: str,
+    themes: list[Theme],
     models: list[str],
     config,
     client,
     gate,
     semaphore: asyncio.Semaphore,
     total: int,
+    prices: dict | None = None,
 ) -> tuple[WorkItem, list[tuple[str, dict]]]:
     """Analyze one transcript. Never raises for per-transcript problems —
     a read failure is recorded as an error payload so the rest of the batch
@@ -363,13 +421,14 @@ async def _analyze_item(
             ]
 
         return item, await run_all(
-            transcript, theme, models, label=label, config=config, client=client, gate=gate
+            transcript, themes, models, label=label, config=config, client=client, gate=gate,
+            prices=prices,
         )
 
 
 async def run_batch(
     transcript_paths: list[str],
-    theme: str,
+    themes: list[Theme],
     models: list[str],
     out_dir: str,
     config=None,
@@ -386,7 +445,7 @@ async def run_batch(
     total = len(items)
     cp_path = checkpoint_path(out_dir)
 
-    previous = read_checkpoint(cp_path, theme, models) if resume else {}
+    previous = read_checkpoint(cp_path, themes, models) if resume else {}
     results_by_key: dict[str, tuple[str, list[tuple[str, dict]]]] = {}
     pending: list[WorkItem] = []
 
@@ -401,7 +460,11 @@ async def run_batch(
         results_by_key[item.key] = (item.display_name, prior["results"])
 
     reused = len(results_by_key)
-    print(f"Analyzing {total} transcript(s) x {len(models)} model(s) for theme: {theme!r}")
+    names = ", ".join(repr(t.name) for t in themes)
+    print(
+        f"Analyzing {total} transcript(s) x {len(models)} model(s) for "
+        f"{len(themes)} theme(s): {names}"
+    )
     if reused:
         print(f"Resuming: {reused} already complete, {len(pending)} to go.")
     elif resume and os.path.isfile(cp_path):
@@ -414,16 +477,21 @@ async def run_batch(
 
     interrupted = False
     if pending:
+        # Once per run, not per transcript: it may be a network round-trip.
+        # Only new work needs it -- reused payloads were priced when made.
+        prices = resolve_prices(models, config)
         client = make_client(config)
         gate = get_request_gate(config.max_concurrent_requests)
         semaphore = asyncio.Semaphore(config.max_concurrent_transcripts)
         started = time.monotonic()
         completed = 0
 
-        writer = CheckpointWriter(cp_path, theme, models)
+        writer = CheckpointWriter(cp_path, themes, models)
         tasks = [
             asyncio.create_task(
-                _analyze_item(item, theme, models, config, client, gate, semaphore, total)
+                _analyze_item(
+                    item, themes, models, config, client, gate, semaphore, total, prices
+                )
             )
             for item in pending
         ]
@@ -459,12 +527,12 @@ async def run_batch(
             writer.close()
             await client.close()
 
-    write_report_from_results(theme, items, results_by_key, out_dir, total)
+    write_report_from_results(themes, items, results_by_key, out_dir, total)
     return interrupted
 
 
 def write_report_from_results(
-    theme: str,
+    themes: list[Theme],
     items: list[WorkItem],
     results_by_key: dict[str, tuple[str, list[tuple[str, dict]]]],
     out_dir: str,
@@ -480,12 +548,12 @@ def write_report_from_results(
     analyzed = len(raw_by_transcript)
     failed = sum(1 for payloads in raw_by_transcript.values() if has_error(payloads))
     print(f"\n{analyzed}/{total} transcript(s) in report" + (f", {failed} with errors" if failed else ""))
-    _write_outputs(theme, raw_by_transcript, out_dir)
+    _write_outputs(themes, raw_by_transcript, out_dir)
 
 
 def salvage_report(
     transcript_paths: list[str],
-    theme: str,
+    themes: list[Theme],
     models: list[str],
     out_dir: str,
     base_dir: str | None,
@@ -497,14 +565,31 @@ def salvage_report(
     precisely so this is always possible.
     """
     items = _build_work_items(transcript_paths, base_dir)
-    stored = read_checkpoint(checkpoint_path(out_dir), theme, models)
+    stored = read_checkpoint(checkpoint_path(out_dir), themes, models)
     results_by_key = {
         key: (entry["display_name"], entry["results"]) for key, entry in stored.items()
     }
     if not results_by_key:
         return
     print("\nRebuilding the report from the checkpoint...")
-    write_report_from_results(theme, items, results_by_key, out_dir, len(items))
+    write_report_from_results(themes, items, results_by_key, out_dir, len(items))
+
+
+def _load_themes(args, config) -> list[Theme]:
+    """Build and check the theme list, exiting with the user-facing message
+    on bad input. Runs before discovery or any API call, so a typo in the
+    themes costs nothing."""
+    try:
+        file_rows = read_themes_file(args.themes_file) if args.themes_file else []
+        themes = build_themes(args.theme, file_rows)
+        check_theme_limit(themes, config.max_themes)
+    except ThemeInputError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"Could not read --themes-file {args.themes_file}: {exc}", file=sys.stderr)
+        sys.exit(2)
+    return themes
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -515,7 +600,10 @@ def main(argv: list[str] | None = None) -> None:
         config.max_concurrent_transcripts = args.max_concurrent_transcripts
     if args.max_concurrent_requests is not None:
         config.max_concurrent_requests = args.max_concurrent_requests
+    if args.max_themes is not None:
+        config.max_themes = args.max_themes
     config = config.validated()
+    themes = _load_themes(args, config)
     models = args.models or [config.default_model]
 
     if args.transcript_dir:
@@ -538,7 +626,7 @@ def main(argv: list[str] | None = None) -> None:
             interrupted = asyncio.run(
                 run_batch(
                     paths,
-                    args.theme,
+                    themes,
                     models,
                     args.out_dir,
                     config=config,
@@ -553,7 +641,7 @@ def main(argv: list[str] | None = None) -> None:
             # disk, so rebuild the report from there rather than leaving the
             # user with a completed run and no output.
             print("\nInterrupted.", file=sys.stderr)
-            salvage_report(paths, args.theme, models, args.out_dir, args.transcript_dir)
+            salvage_report(paths, themes, models, args.out_dir, args.transcript_dir)
             sys.exit(130)
         if interrupted:
             sys.exit(130)
@@ -562,18 +650,21 @@ def main(argv: list[str] | None = None) -> None:
     transcript = load_transcript_text(args.transcript)
     transcript_stem = os.path.splitext(os.path.basename(args.transcript))[0]
 
+    prices = resolve_prices(models, config)
+
     async def _single() -> list[tuple[str, dict]]:
         client = make_client(config)
         gate = get_request_gate(config.max_concurrent_requests)
         try:
             return await run_all(
-                transcript, args.theme, models, config=config, client=client, gate=gate
+                transcript, themes, models, config=config, client=client, gate=gate,
+                prices=prices,
             )
         finally:
             await client.close()
 
     raw_results = asyncio.run(_single())
-    _write_outputs(args.theme, {transcript_stem: raw_results}, args.out_dir)
+    _write_outputs(themes, {transcript_stem: raw_results}, args.out_dir)
 
 
 if __name__ == "__main__":

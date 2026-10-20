@@ -1,6 +1,6 @@
 import os
 
-from transcript_theme_analyzer.cli import _discover_transcript_paths
+from transcript_theme_analyzer.cli import _discover_transcript_paths, parse_args
 
 
 def test_discover_transcript_paths_recursive_and_filtering(tmp_path):
@@ -32,3 +32,15 @@ def test_discover_transcript_paths_recursive_and_filtering(tmp_path):
         "folder_a/file1.docx",
         "root.txt",
     ])
+
+
+def test_theme_is_repeatable_and_optional():
+    args = parse_args(["--transcript", "t.txt", "--theme", "Grace", "--theme", "Hope"])
+    assert args.theme == ["Grace", "Hope"]
+    assert args.themes_file is None
+    assert args.max_themes is None
+
+    args = parse_args(["--transcript", "t.txt", "--themes-file", "themes.csv", "--max-themes", "8"])
+    assert args.theme == []
+    assert args.themes_file == "themes.csv"
+    assert args.max_themes == 8

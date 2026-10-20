@@ -1,5 +1,6 @@
-"""Generates a single consolidated Word (.docx) document with every relevant
-excerpt from every transcript that matched the search theme:
+"""Generates one consolidated Word (.docx) document per theme
+(``docx/<theme_id>.docx``) with every relevant excerpt from every transcript
+that matched that theme:
 
 - Document title = the search theme.
 - An overview table (transcript × relevance score, in ranked order) right
@@ -188,7 +189,7 @@ def write_docx_from_data(
     min_score: int | None = None,
 ) -> str:
     """Build and save the Word document directly from in-memory run payloads
-    (same shape ``report.write_html_from_data`` takes) — no disk round-trip."""
+    (single-theme shape, see ``report.build_report``) — no disk round-trip."""
     report = build_report(theme, transcripts)
     return write_docx(report, out_path, min_score=min_score)
 
@@ -209,28 +210,26 @@ def write_theme_docxs(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Regenerate report.docx from the internal analysis cache"
+        description="Regenerate every theme's docx/<theme_id>.docx from the internal analysis cache"
     )
     parser.add_argument("--cache", required=True, help="Path to the .raw_results.json cache file")
-    parser.add_argument("--out", default=None, help="Output .docx path (defaults to report.docx next to the cache file)")
     parser.add_argument(
-        "--min-score", type=int, default=None,
-        help="Only include transcripts whose best score is >= this value (default: include any transcript with at least one located excerpt)",
+        "--out-dir", default=None,
+        help="Directory to write docx/ into (defaults to the cache file's directory)",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    out_path = args.out or os.path.join(os.path.dirname(args.cache) or ".", "report.docx")
+    out_dir = args.out_dir or os.path.dirname(args.cache) or "."
     try:
-        theme, transcripts = read_cache(args.cache)
-    except (FileNotFoundError, OSError) as exc:
+        themes, transcripts = read_cache(args.cache)
+    except (ValueError, OSError) as exc:  # OSError covers FileNotFoundError
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    report = build_report(theme, transcripts)
-    write_docx(report, out_path, min_score=args.min_score)
-    print(f"[docx] {out_path}")
+    for path in write_theme_docxs(themes, transcripts, out_dir):
+        print(f"[report:docx] {path}")
 
 
 if __name__ == "__main__":

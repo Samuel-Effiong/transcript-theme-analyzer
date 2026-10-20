@@ -3,14 +3,20 @@
 ``build_run_report`` turns the multi-theme run payloads (see ``report`` for
 the ``transcripts`` shape) into a ``RunReport``; ``render_run_html`` renders
 one self-contained page (inline CSS/JS only).
+
+Usage (regenerate later from the internal cache, without re-running analysis):
+    python -m transcript_theme_analyzer.run_report --cache results/.raw_results.json
 """
 from __future__ import annotations
 
+import argparse
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html import escape as h
 
+from .cache import read_cache
 from .report import BASE_CSS, _bar_color_var, _render_locations_html
 from .themes import Theme
 
@@ -397,3 +403,29 @@ def write_run_html(
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(render_run_html(report, top_locations=top_locations))
     return out_path
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Regenerate report.html from the internal analysis cache"
+    )
+    parser.add_argument("--cache", required=True, help="Path to the .raw_results.json cache file")
+    parser.add_argument("--out", default=None, help="Output .html path (defaults to report.html next to the cache file)")
+    parser.add_argument("--top-locations", type=int, default=5, help="Max locations to show per transcript and theme")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    out_path = args.out or os.path.join(os.path.dirname(args.cache) or ".", "report.html")
+    try:
+        themes, transcripts = read_cache(args.cache)
+    except (ValueError, OSError) as exc:  # OSError covers FileNotFoundError
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    write_run_html(themes, transcripts, out_path, top_locations=args.top_locations)
+    print(f"[report:html] {out_path}")
+
+
+if __name__ == "__main__":
+    main()
