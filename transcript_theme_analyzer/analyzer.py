@@ -7,7 +7,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import get_origin
+from typing import Any, Callable, get_origin
 
 import openai
 from openai import AsyncOpenAI
@@ -18,7 +18,14 @@ from .aggregate import compute_aggregate_score, merge_and_dedupe_locations
 from .chunker import chunk_transcript, estimate_tokens
 from .config import Config
 from .extraction import extract_passage
-from .schema import AnalysisResult, ChunkAnalysis, Location, LocationMarker
+from .schema import (
+    AnalysisResult,
+    ChunkAnalysis,
+    Location,
+    LocationMarker,
+    ThemeChunkAnalysis,
+)
+from .themes import Theme
 
 logger = logging.getLogger("transcript_theme_analyzer")
 
@@ -296,6 +303,46 @@ def _repair_parsed_json(parsed, schema_cls):
     return parsed
 
 
+class MissingThemesError(ValueError):
+    """The model's answer left out one or more of the requested themes."""
+
+
+def _repair_multi_theme(parsed, themes: list[Theme], entry_cls=ThemeChunkAnalysis):
+    """Repair a ``{"themes": [...]}`` answer against the requested theme list.
+
+    Each entry's ``theme_id`` is matched case-insensitively against a theme's
+    id or name (models sometimes echo the display name). Unknown and duplicate
+    entries are dropped (first wins), each kept entry gets the per-entry
+    repair, and entries come back in input-theme order. A theme the model
+    skipped can't be defaulted without fabricating an assessment, so it
+    raises MissingThemesError and the caller retries.
+    """
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("themes"), list):
+        return parsed
+
+    lookup: dict[str, Theme] = {}
+    for theme in themes:
+        lookup[theme.id.casefold()] = theme
+    for theme in themes:
+        lookup.setdefault(theme.name.casefold(), theme)
+
+    by_id: dict[str, dict] = {}
+    for entry in parsed["themes"]:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get("theme_id")
+        theme = lookup.get(key.strip().casefold()) if isinstance(key, str) else None
+        if theme is None or theme.id in by_id:
+            continue
+        by_id[theme.id] = _repair_parsed_json({**entry, "theme_id": theme.id}, entry_cls)
+
+    missing = [t.id for t in themes if t.id not in by_id]
+    if missing:
+        raise MissingThemesError("missing themes: " + ", ".join(missing))
+
+    return {**parsed, "themes": [by_id[t.id] for t in themes]}
+
+
 class TruncatedResponseError(Exception):
     """The model hit its output cap mid-JSON. Retrying the identical request
     usually truncates again, so this carries a pointed message rather than
@@ -364,6 +411,8 @@ async def _call_with_retry(
     max_output_tokens: int | None,
     label: str = "",
     gate: "RequestGate | None" = None,
+    repair: Callable[[Any], Any] | None = None,
+    extra_body: dict | None = None,
 ):
     """Call the chat completions API, enforcing the schema.
 
@@ -376,11 +425,15 @@ async def _call_with_retry(
     # No cap configured: omit the parameter entirely so the model's own
     # maximum applies, rather than sending some arbitrary large number.
     max_tokens = max_output_tokens or openai.NOT_GIVEN
+    if repair is None:
+        def repair(p):
+            return _repair_parsed_json(p, schema_cls)
 
     async def _plain_call():
         return await client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
+            extra_body=extra_body,
             messages=[
                 {"role": "system", "content": system},
                 {
@@ -405,6 +458,7 @@ async def _call_with_retry(
                         resp = await client.chat.completions.create(
                             model=model,
                             max_tokens=max_tokens,
+                            extra_body=extra_body,
                             messages=[
                                 {"role": "system", "content": system},
                                 {"role": "user", "content": user},
@@ -432,7 +486,7 @@ async def _call_with_retry(
 
             content = _extract_content(resp, model)
             parsed = json.loads(content)
-            parsed = _repair_parsed_json(parsed, schema_cls)
+            parsed = repair(parsed)
             result = schema_cls.model_validate(parsed)
             return result, resp.usage
         except RETRYABLE_EXCEPTIONS as exc:

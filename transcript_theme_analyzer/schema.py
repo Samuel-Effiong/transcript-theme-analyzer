@@ -53,3 +53,28 @@ class ChunkAnalysis(BaseModel):
     )
     reasoning: str
     locations: list[LocationMarker] = Field(default_factory=list)
+
+
+class ThemeChunkAnalysis(ChunkAnalysis):
+    """One theme's assessment of a chunk, inside a multi-theme response."""
+
+    theme_id: str = Field(description="The id of the theme from the THEMES list this entry assesses")
+
+
+class MultiThemeChunkAnalysis(BaseModel):
+    """Map-step response covering every theme in the run."""
+
+    themes: list[ThemeChunkAnalysis]
+
+
+class ThemeSynthesis(BaseModel):
+    """One theme's final reasoning paragraph."""
+
+    theme_id: str
+    reasoning: str
+
+
+class MultiThemeSynthesis(BaseModel):
+    """Synthesis-step response covering every theme in the run."""
+
+    themes: list[ThemeSynthesis]
