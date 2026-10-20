@@ -22,6 +22,12 @@ def slugify(name: str) -> str:
     return slug or "theme"
 
 
+def _one_line(text: str) -> str:
+    """Runs of whitespace (newlines included) -> one space: each theme must
+    stay on one line of the prompt's THEMES block."""
+    return " ".join(text.split())
+
+
 def build_themes(names: list[str], file_rows: list[tuple[str, str]]) -> list[Theme]:
     """Command-line names first, then file rows. Ids are unique slugs."""
     entries = [(n, "") for n in names] + list(file_rows)
@@ -32,7 +38,7 @@ def build_themes(names: list[str], file_rows: list[tuple[str, str]]) -> list[The
     seen_names: set[str] = set()
     used_ids: set[str] = set()
     for raw_name, description in entries:
-        name = raw_name.strip()
+        name = _one_line(raw_name)
         if not name:
             raise ThemeInputError("A theme name is empty.")
         key = name.casefold()
@@ -46,7 +52,7 @@ def build_themes(names: list[str], file_rows: list[tuple[str, str]]) -> list[The
             n += 1
             theme_id = f"{base}-{n}"
         used_ids.add(theme_id)
-        themes.append(Theme(id=theme_id, name=name, description=description.strip()))
+        themes.append(Theme(id=theme_id, name=name, description=_one_line(description)))
     return themes
 
 

@@ -85,3 +85,17 @@ def test_price_empty_or_unset_is_none(monkeypatch):
     assert cfg.price_input_per_m is None
     assert cfg.price_cached_input_per_m is None
     assert cfg.price_output_per_m == 0.5
+
+
+def test_internal_whitespace_and_newlines_collapsed():
+    from transcript_theme_analyzer.prompts import format_theme_block
+
+    themes = build_themes(["the  glory\nof God"], [("Grace", "unmerited\r\n\n favour\tgiven")])
+    assert themes[0].name == "the glory of God"
+    assert themes[1].description == "unmerited favour given"
+    assert len(format_theme_block(themes).splitlines()) == 2
+
+
+def test_names_equal_after_collapsing_are_duplicates():
+    with pytest.raises(ThemeInputError, match="listed more than once"):
+        build_themes(["Grace  Alone", "grace alone"], [])
