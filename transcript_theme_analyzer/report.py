@@ -101,8 +101,8 @@ def build_report(theme: str, transcripts: dict[str, list[tuple[str, dict]]]) -> 
 
 
 def _project_payload(model: str, data: dict, theme: Theme) -> dict:
-    if "themes" not in data:
-        return data  # error (or already single-theme) payloads pass through
+    if "error" in data:
+        return data  # failed runs pass through
     entry = (data.get("themes") or {}).get(theme.id)
     if entry is None:
         return {"model": model, "error": f"no result for theme {theme.id}"}

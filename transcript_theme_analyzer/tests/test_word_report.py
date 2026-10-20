@@ -311,3 +311,12 @@ def test_project_theme_missing_theme_and_errors():
     ok = {"model_used": "m1", "chunked": False, "themes": {"grace": _grace_entry()}}
     projected = project_theme({"ep1": [("m1", ok)]}, Theme(id="grace", name="Grace"))["ep1"][0][1]
     assert projected["_meta"]["usage"].get("total_tokens") is None
+
+
+def test_project_theme_payload_without_themes_key_is_an_error():
+    from transcript_theme_analyzer.report import project_theme
+    from transcript_theme_analyzer.themes import Theme
+
+    legacy = make_success(80, locations=[{"excerpt": "e", "title": "t"}])
+    out = project_theme({"ep1": [("m1", legacy)]}, Theme(id="grace", name="Grace"))
+    assert out["ep1"][0][1] == {"model": "m1", "error": "no result for theme grace"}
