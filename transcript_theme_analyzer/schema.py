@@ -57,10 +57,16 @@ class ChunkAnalysis(BaseModel):
     locations: list[LocationMarker] = Field(default_factory=list)
 
 
-class ThemeChunkAnalysis(ChunkAnalysis):
-    """One theme's assessment of a chunk, inside a multi-theme response."""
-
+class _ThemeIdFirst(BaseModel):
     theme_id: str = Field(description="The id of the theme from the THEMES list this entry assesses")
+
+
+class ThemeChunkAnalysis(ChunkAnalysis, _ThemeIdFirst):
+    """One theme's assessment of a chunk, inside a multi-theme response.
+
+    ``theme_id`` comes from the last base so Pydantic lists it *first*:
+    constrained decoders emit keys in schema order, and the model must name
+    the theme before it writes that theme's assessment."""
 
 
 class MultiThemeChunkAnalysis(BaseModel):

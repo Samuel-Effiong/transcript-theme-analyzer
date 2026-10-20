@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from .themes import Theme
 
-PROMPT_VERSION = "multi-v2"
+PROMPT_VERSION = "multi-v3"
 
 MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2 = """\
 You are a senior thematic-analysis expert with deep experience in discourse analysis, \

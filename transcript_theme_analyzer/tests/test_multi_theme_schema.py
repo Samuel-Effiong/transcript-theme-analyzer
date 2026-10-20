@@ -15,6 +15,7 @@ from transcript_theme_analyzer.prompts import (
     format_theme_block,
 )
 from transcript_theme_analyzer.schema import (
+    ChunkAnalysis,
     MultiThemeChunkAnalysis,
     MultiThemeSynthesis,
     ThemeChunkAnalysis,
@@ -93,7 +94,7 @@ def test_theme_block_precedes_transcript():
 
 
 def test_prompt_constants():
-    assert prompts.PROMPT_VERSION == "multi-v2"
+    assert prompts.PROMPT_VERSION == "multi-v3"
     assert "THEMES list" in prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2
     assert "more than one theme" in prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2
     assert '"themes"' in prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2
@@ -106,9 +107,22 @@ def test_strictify_nested_entry_has_additional_properties_false():
     assert "theme_id" in entry["required"]
 
 
+def test_theme_id_is_first_property_on_the_wire():
+    # Constrained decoders emit keys in schema order: the model must name the
+    # theme before it writes that theme's assessment.
+    for cls in (ThemeChunkAnalysis, ThemeSynthesis):
+        assert list(cls.model_json_schema()["properties"])[0] == "theme_id"
+    chunk = _strictify(MultiThemeChunkAnalysis.model_json_schema())["$defs"]["ThemeChunkAnalysis"]
+    assert list(chunk["properties"])[0] == "theme_id"
+    assert chunk["required"][0] == "theme_id"
+    synth = _strictify(MultiThemeSynthesis.model_json_schema())["$defs"]["ThemeSynthesis"]
+    assert list(synth["properties"])[0] == "theme_id"
+
+
 def test_theme_chunk_analysis_extends_chunk_analysis():
     t = ThemeChunkAnalysis(theme_id="a", relevance_score=1, explicitness="absent", reasoning="r")
     assert t.locations == []
+    assert isinstance(t, ChunkAnalysis)
 
 
 class _Completions:
