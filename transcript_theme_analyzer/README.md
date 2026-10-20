@@ -69,7 +69,10 @@ MAX_THEMES=5
 
 The code's default model is `deepseek/deepseek-v4-flash`; set
 `LLM_DEFAULT_MODEL` (or pass `--models`) to use another. No output token cap
-is applied unless you set `LLM_MAX_OUTPUT_TOKENS`.
+is applied unless you set `LLM_MAX_OUTPUT_TOKENS`. If a model still runs out
+of output space mid-answer (more likely with many themes), that run fails at
+once rather than retrying, with a hint to lower `MAX_THEMES` or pick a model
+with a larger output limit.
 
 Switching providers is a config-only change (`client.py` never hardcodes a
 provider) — same pipeline code runs against OpenAI or any OpenAI-compatible
@@ -132,8 +135,8 @@ You entered 7 themes. The limit is 5 (MAX_THEMES). Remove 2 theme(s) or raise MA
 ```
 
 Multiple models per transcript (for each transcript and theme, the
-best-scoring model's excerpts are what show up in the reports; the others are
-listed for comparison):
+best-scoring model's excerpts are what show up in the reports; `report.html`
+lists the other models' scores for that theme in its detail panel):
 
 ```bash
 python -m transcript_theme_analyzer.cli \
@@ -166,13 +169,17 @@ Every CLI run writes these into `--out-dir` (default `results/`):
 
 - **`report.html`** — one self-contained, no-dependency interactive page for
   the current run (all transcripts x all themes):
-  - A results table with one score column per theme and a relevance bar per
-    cell; click any column header to sort, and use the filter box to narrow by
-    transcript name.
-  - A detail panel per transcript (reasoning + key excerpts for each theme,
-    including zero-score or failed ones) — the full audit view.
-  - A **Cost** section with tokens and cost for the run, and a **Per theme**
-    table (see below).
+  - A grid with one row per transcript and one colour-shaded score per theme
+    (`–` where the theme wasn't found, `FAILED` where every model failed),
+    plus each transcript's tokens / cost. Pick a theme in the theme picker to
+    show only that column and rank the transcripts by it; the filter box
+    narrows by transcript name.
+  - Click a score to open its details below the grid: the model's reasoning
+    and the key passages (with timestamp/speaker when known). On a
+    multi-model run it also lists the other models' scores for that theme.
+  - A **Cost** section with the run's tokens and cost — OpenRouter's actual
+    charge, else an estimate from prices, else `n/a` — and the estimated
+    provider discount, plus a **Per theme** table (est.; see below).
   - Mobile-friendly and light/dark styled.
 - **`docx/<theme_id>.docx`** — one Word document per theme (the id is a slug of
   the theme name, e.g. `docx/forgiveness.docx`), the curated excerpt deliverable:
@@ -181,8 +188,9 @@ Every CLI run writes these into `--out-dir` (default `results/`):
     highest first; transcript names are clickable links to that transcript's
     section (transcripts with no located excerpts, or where every model run
     failed, still show up with their score/`FAILED`, just without a link).
-  - **One section per transcript** that has at least one located excerpt,
-    headed `Transcript: <name>`.
+  - **One section per transcript** where the theme was found (score above 0
+    and not marked absent — the same rule the HTML grid uses) and that has at
+    least one located excerpt, headed `Transcript: <name>`.
   - **One sub-heading per passage**, a short section-title (2-6 words)
     generated from that passage's own content, with the full continuous
     passage underneath and its timestamp/speaker if known.
@@ -190,9 +198,8 @@ Every CLI run writes these into `--out-dir` (default `results/`):
 Failed model runs (e.g. a rate limit or timeout) are captured per-model and
 shown as `FAILED`/error rather than crashing either report.
 
-> **Reusing `--out-dir`:** `docx/` files from an earlier run with *different*
-> themes are **not** removed, so they would sit next to the new ones. Use a
-> fresh `--out-dir` for each theme set.
+Reusing an `--out-dir` is safe: `docx/` only ever holds the current run's
+themes. A Word file for a theme that is no longer in the run is removed.
 
 ### Cost reporting
 
@@ -204,6 +211,8 @@ Tokens and cost appear in the `report.html` Cost section:
   `LLM_PRICE_OUTPUT_PER_M` (USD per 1M tokens; env values win) or OpenRouter's
   public price list. If neither is known the figure is shown as `n/a`, never
   `$0.00`.
+- **Every paid call counts.** Retries (a bad or incomplete answer) and the
+  calls of a run that later failed are included, so the totals match the bill.
 - **Totals vs per-theme.** Run totals and per-transcript figures are exact.
   Themes share one call, so the per-theme tokens and cost are marked **est.**
 - **Provider discount.** Cached input tokens x (input price - cached price) —
@@ -298,12 +307,16 @@ pydantic models in `schema.py`). If the provider/model rejects that
 parameter (many OpenRouter-routed non-OpenAI models don't support it),
 `analyzer._call_with_retry` falls back to plain JSON-mode prompting with a
 strict parse-and-retry loop (bounded by `LLM_MAX_RETRIES`, with backoff on
-both transient API errors and JSON parse/validation failures).
+both transient API errors and JSON parse/validation failures). An answer cut
+off at the output limit is not retried: the same request would be cut off
+again.
 
 ## Cost / token logging
 
 Every call's token usage and cost are recorded (`RunStats` in `analyzer.py`,
-prices from `pricing.py`) and included under `_meta.usage` in each result, in
+prices from `pricing.py`) — retries and the calls of a failed run included —
+and stored under `_meta.usage` in each result (a failed run's error entry
+too), in
 the `report.html` Cost section (see *Cost reporting* above) and in the
 comparison table, so multi-model runs can be judged on cost as well as quality.
 
