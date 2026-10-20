@@ -7,6 +7,7 @@ from transcript_theme_analyzer.analyzer import RunStats, openrouter_extra_body
 from transcript_theme_analyzer.config import Config
 from transcript_theme_analyzer.pricing import (
     Prices,
+    _input_fraction,
     fetch_openrouter_prices,
     resolve_prices,
 )
@@ -106,6 +107,65 @@ def test_reported_cost_from_model_extra():
     s.add("a", "m", SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2,
                                     model_extra={"cost": 0.25}))
     assert s.calls[0].reported_cost == 0.25
+
+
+def _usage(cost_details=None, **extra):
+    return SimpleNamespace(prompt_tokens=900, completion_tokens=100, total_tokens=1000,
+                           model_extra={"cost_details": cost_details, **extra})
+
+
+def test_reported_cost_split_preferred_over_prices():
+    s = RunStats()
+    # The live OpenRouter payload shape.
+    s.add("a", "m", _usage({"upstream_inference_cost": 8.04e-06,
+                            "upstream_inference_prompt_cost": 7.7e-06,
+                            "upstream_inference_completions_cost": 3.4e-07},
+                           cost=8.04e-06))
+    call = s.calls[0]
+    assert call.reported_input_cost == pytest.approx(7.7e-06)
+    assert call.reported_output_cost == pytest.approx(3.4e-07)
+    assert _input_fraction(call, P) == pytest.approx(7.7e-06 / 8.04e-06)
+
+
+def test_reported_cost_split_read_from_attribute_too():
+    s = RunStats()
+    usage = SimpleNamespace(prompt_tokens=900, completion_tokens=100, total_tokens=1000,
+                            cost_details=SimpleNamespace(upstream_inference_prompt_cost=0.2,
+                                                         upstream_inference_completions_cost=0.8))
+    s.add("a", "m", usage)
+    assert _input_fraction(s.calls[0], P) == pytest.approx(0.2)
+
+
+def test_reported_cost_split_absent_keeps_price_then_token_ratio():
+    s = RunStats()
+    s.add("a", "m", _usage())
+    call = s.calls[0]
+    assert call.reported_input_cost is None and call.reported_output_cost is None
+    assert _input_fraction(call, P) == pytest.approx(900 / (900 + 400))
+    assert _input_fraction(call, None) == pytest.approx(0.9)
+
+
+def test_reported_cost_split_zero_sum_falls_back():
+    s = RunStats()
+    s.add("a", "m", _usage({"upstream_inference_prompt_cost": 0,
+                            "upstream_inference_completions_cost": 0}))
+    assert _input_fraction(s.calls[0], P) == pytest.approx(900 / 1300)
+
+
+def test_non_numeric_reported_costs_are_ignored_without_raising():
+    s = RunStats()
+    s.add("a", "m", _usage({"upstream_inference_prompt_cost": "abc",
+                            "upstream_inference_completions_cost": [1]},
+                           cost="not-a-number"))
+    call = s.calls[0]
+    assert call.reported_cost is None
+    assert call.reported_input_cost is None and call.reported_output_cost is None
+    assert _input_fraction(call, P) == pytest.approx(900 / 1300)
+    s.add("b", "m", _usage("garbage"))
+    assert s.calls[1].reported_input_cost is None
+    s.add("c", "m", _usage({"upstream_inference_prompt_cost": float("nan"),
+                            "upstream_inference_completions_cost": 1.0}, cost=float("inf")))
+    assert s.calls[2].reported_input_cost is None and s.calls[2].reported_cost is None
 
 
 def _client(handler):

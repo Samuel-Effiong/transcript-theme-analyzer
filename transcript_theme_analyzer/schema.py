@@ -37,7 +37,9 @@ class AnalysisResult(BaseModel):
     """Final, top-level result returned by the pipeline for one (transcript, theme, model) run."""
 
     theme: str
+    theme_id: str
     relevance_score: int = Field(ge=0, le=100)
+    explicitness: Literal["explicit", "tangential", "absent"]
     reasoning: str
     locations: list[Location] = Field(default_factory=list)
     model_used: str

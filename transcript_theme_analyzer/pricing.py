@@ -57,7 +57,16 @@ def call_discount(call: "CallLog", prices: Prices | None) -> float | None:
 
 
 def _input_fraction(call: "CallLog", prices: Prices | None) -> float:
-    """Share of the call attributable to input (the rest is output)."""
+    """Share of the call attributable to input (the rest is output).
+
+    OpenRouter's own input/output cost split wins, then the price ratio,
+    then the token ratio."""
+    reported_in = getattr(call, "reported_input_cost", None)
+    reported_out = getattr(call, "reported_output_cost", None)
+    if reported_in is not None and reported_out is not None and min(reported_in, reported_out) >= 0:
+        reported_total = reported_in + reported_out
+        if reported_total > 0:
+            return reported_in / reported_total
     if prices is not None:
         cached = call.cached_tokens
         cached_rate = prices.cached_input_per_m

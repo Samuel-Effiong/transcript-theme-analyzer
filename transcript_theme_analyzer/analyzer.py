@@ -5,26 +5,28 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, get_origin
 
 import openai
 from openai import AsyncOpenAI
-from pydantic import BaseModel
 
 from . import prompts
 from .aggregate import compute_aggregate_score, merge_and_dedupe_locations
-from .chunker import chunk_transcript, estimate_tokens
+from .chunker import Chunk, chunk_transcript, estimate_tokens
 from .config import Config
 from .extraction import extract_passage
 from .pricing import Prices, attribute_call, call_cost, call_discount
 from .schema import (
     AnalysisResult,
-    ChunkAnalysis,
     Location,
     LocationMarker,
+    MultiThemeChunkAnalysis,
+    MultiThemeSynthesis,
     ThemeChunkAnalysis,
+    ThemeSynthesis,
 )
 from .themes import Theme
 
@@ -70,6 +72,9 @@ class CallLog:
     cached_tokens: int = 0
     # Cost OpenRouter itself reported for this call (USD), if any.
     reported_cost: float | None = None
+    # OpenRouter's input/output split of that cost (usage.cost_details), if any.
+    reported_input_cost: float | None = None
+    reported_output_cost: float | None = None
     theme_ids: list[str] = field(default_factory=list)
     theme_output_chars: dict[str, int] = field(default_factory=dict)
     # Filled by RunStats.apply_prices.
@@ -87,11 +92,42 @@ def _cached_tokens(usage) -> int:
     return cached or 0
 
 
+def _usage_field(obj, name: str):
+    """Read a field the SDK may hold as an attribute or in ``model_extra``
+    (or, for a nested dict, as a plain key)."""
+    if isinstance(obj, dict):
+        return obj.get(name)
+    value = getattr(obj, name, None)
+    if value is None:
+        extra = getattr(obj, "model_extra", None)
+        if isinstance(extra, dict):
+            value = extra.get(name)
+    return value
+
+
+def _as_float(value) -> float | None:
+    """A cost-reporting quirk must never fail a call: non-numeric -> None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _reported_cost(usage) -> float | None:
-    cost = getattr(usage, "cost", None)
-    if cost is None:
-        cost = (getattr(usage, "model_extra", None) or {}).get("cost")
-    return float(cost) if cost is not None else None
+    return _as_float(_usage_field(usage, "cost"))
+
+
+def _reported_cost_split(usage) -> tuple[float | None, float | None]:
+    details = _usage_field(usage, "cost_details")
+    if details is None:
+        return None, None
+    return (
+        _as_float(_usage_field(details, "upstream_inference_prompt_cost")),
+        _as_float(_usage_field(details, "upstream_inference_completions_cost")),
+    )
 
 
 @dataclass
@@ -114,6 +150,7 @@ class RunStats:
         if usage is None:
             self.calls.append(CallLog(label=label, model=model, **themes))
             return
+        reported_input, reported_output = _reported_cost_split(usage)
         self.calls.append(
             CallLog(
                 label=label,
@@ -123,6 +160,8 @@ class RunStats:
                 total_tokens=getattr(usage, "total_tokens", 0) or 0,
                 cached_tokens=_cached_tokens(usage),
                 reported_cost=_reported_cost(usage),
+                reported_input_cost=reported_input,
+                reported_output_cost=reported_output,
                 **themes,
             )
         )
@@ -613,75 +652,101 @@ async def _call_with_retry(
     raise RuntimeError(f"Failed after {max_retries} attempts: {last_exc}") from last_exc
 
 
-async def analyze_single_pass(
+_EXPLICITNESS_RANK = {"absent": 0, "tangential": 1, "explicit": 2}
+
+
+def _theme_output_chars(entries) -> dict[str, int]:
+    """Each theme's share of the answer, used to split output cost."""
+    return {entry.theme_id: len(entry.model_dump_json()) for entry in entries}
+
+
+async def _analyze_single_pass(
     client: AsyncOpenAI,
     model: str,
-    theme: str,
+    themes: list[Theme],
     transcript: str,
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
     gate: RequestGate | None = None,
-) -> AnalysisResult:
+) -> list[AnalysisResult]:
     if progress:
         progress.start("single-pass")
-    user = prompts.SINGLE_PASS_USER_PROMPT_TEMPLATE.format(theme=theme, transcript=transcript)
+    user = prompts.MULTI_SINGLE_PASS_USER_TEMPLATE.format(
+        theme_block=prompts.format_theme_block(themes), transcript=transcript
+    )
     result, usage = await _call_with_retry(
         client,
         model=model,
-        system=prompts.CHUNK_ANALYSIS_SYSTEM_PROMPT_V1,
+        system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
         user=user,
-        schema_cls=ChunkAnalysis,
-        schema_name="chunk_analysis",
+        schema_cls=MultiThemeChunkAnalysis,
+        schema_name="multi_theme_chunk_analysis",
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
         gate=gate,
+        repair=lambda p: _repair_multi_theme(p, themes),
         extra_body=openrouter_extra_body(config),
     )
-    stats.add("single_pass", model, usage)
+    stats.add(
+        "single_pass",
+        model,
+        usage,
+        theme_ids=[t.id for t in themes],
+        theme_output_chars=_theme_output_chars(result.themes),
+    )
     if progress:
         progress.note("single-pass call complete")
 
-    locations = []
-    for marker in result.locations:
-        excerpt = extract_passage(transcript, marker.start_marker, marker.end_marker)
-        if excerpt is None:
-            continue
-        locations.append(
-            Location(
-                excerpt=excerpt,
-                title=marker.title,
-                timestamp=marker.timestamp,
-                speaker=marker.speaker,
+    by_id = {entry.theme_id: entry for entry in result.themes}
+    results = []
+    for theme in themes:
+        entry = by_id[theme.id]
+        locations = []
+        for marker in entry.locations:
+            excerpt = extract_passage(transcript, marker.start_marker, marker.end_marker)
+            if excerpt is None:
+                continue
+            locations.append(
+                Location(
+                    excerpt=excerpt,
+                    title=marker.title,
+                    timestamp=marker.timestamp,
+                    speaker=marker.speaker,
+                )
+            )
+        results.append(
+            AnalysisResult(
+                theme=theme.name,
+                theme_id=theme.id,
+                relevance_score=entry.relevance_score,
+                explicitness=entry.explicitness,
+                reasoning=entry.reasoning,
+                locations=locations,
+                model_used=model,
+                chunked=False,
             )
         )
-
-    return AnalysisResult(
-        theme=theme,
-        relevance_score=result.relevance_score,
-        reasoning=result.reasoning,
-        locations=locations,
-        model_used=model,
-        chunked=False,
-    )
+    return results
 
 
 async def _analyze_one_chunk(
     client: AsyncOpenAI,
     model: str,
-    theme: str,
-    chunk,
+    themes: list[Theme],
+    chunk: Chunk,
     total_chunks: int,
     config: Config,
     stats: RunStats,
     semaphore: asyncio.Semaphore,
     progress: Progress | None = None,
     gate: RequestGate | None = None,
-) -> tuple[ChunkAnalysis, "object"]:
+) -> tuple[dict[str, ThemeChunkAnalysis], Chunk]:
+    """Analyze one chunk for every theme -> ``({theme_id: entry}, chunk)``."""
     async with semaphore:
-        user = prompts.CHUNK_USER_PROMPT_TEMPLATE.format(
-            theme=theme,
+        user = prompts.MULTI_CHUNK_USER_TEMPLATE.format(
+            theme_block=prompts.format_theme_block(themes),
             chunk_index=chunk.index + 1,
             total_chunks=total_chunks,
             char_start=chunk.char_start,
@@ -691,63 +756,82 @@ async def _analyze_one_chunk(
         result, usage = await _call_with_retry(
             client,
             model=model,
-            system=prompts.CHUNK_ANALYSIS_SYSTEM_PROMPT_V1,
+            system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
             user=user,
-            schema_cls=ChunkAnalysis,
-            schema_name="chunk_analysis",
+            schema_cls=MultiThemeChunkAnalysis,
+            schema_name="multi_theme_chunk_analysis",
             max_retries=config.max_retries,
             max_output_tokens=config.max_output_tokens,
             label=progress.label if progress else "",
             gate=gate,
+            repair=lambda p: _repair_multi_theme(p, themes),
             extra_body=openrouter_extra_body(config),
         )
-        stats.add(f"chunk_{chunk.index}", model, usage)
+        stats.add(
+            f"chunk_{chunk.index}",
+            model,
+            usage,
+            theme_ids=[t.id for t in themes],
+            theme_output_chars=_theme_output_chars(result.themes),
+        )
         if progress:
             progress.step()
-        return result, chunk
+        return {entry.theme_id: entry for entry in result.themes}, chunk
 
 
 async def _synthesize_reasoning(
     client: AsyncOpenAI,
     model: str,
-    theme: str,
-    final_score: int,
-    chunk_results: list[tuple[ChunkAnalysis, object]],
+    themes: list[Theme],
+    final_scores: dict[str, int],
+    chunk_results: list[tuple[dict[str, ThemeChunkAnalysis], Chunk]],
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
     gate: RequestGate | None = None,
-) -> str:
-    lines = []
-    for result, chunk in sorted(chunk_results, key=lambda pair: pair[1].index):
-        lines.append(
-            f"- Segment {chunk.index + 1} (chars {chunk.char_start}-{chunk.char_end}, "
-            f"score {result.relevance_score}, {result.explicitness}): {result.reasoning}"
+) -> dict[str, str]:
+    """One call that writes every theme's final reasoning -> ``{theme_id: reasoning}``."""
+    ordered = sorted(chunk_results, key=lambda pair: pair[1].index)
+    sections = []
+    for theme in themes:
+        lines = []
+        for entries, chunk in ordered:
+            result = entries[theme.id]
+            lines.append(
+                f"- Segment {chunk.index + 1} (chars {chunk.char_start}-{chunk.char_end}, "
+                f"score {result.relevance_score}, {result.explicitness}): {result.reasoning}"
+            )
+        sections.append(
+            f"THEME id: {theme.id} | {theme.name}\n"
+            f"OVERALL COMPUTED SCORE: {final_scores[theme.id]}\n"
+            f"PER-SEGMENT PARTIAL ANALYSES (in transcript order):\n" + "\n".join(lines)
         )
     user = (
-        f"THEME:\n{theme}\n\n"
-        f"OVERALL COMPUTED SCORE: {final_score}\n\n"
-        f"PER-SEGMENT PARTIAL ANALYSES (in transcript order):\n" + "\n".join(lines)
+        f"THEMES:\n{prompts.format_theme_block(themes)}\n\n" + "\n\n".join(sections)
     )
-
-    class SynthesisOutput(BaseModel):
-        reasoning: str
 
     result, usage = await _call_with_retry(
         client,
         model=model,
-        system=prompts.SYNTHESIS_SYSTEM_PROMPT_V1,
+        system=prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2,
         user=user,
-        schema_cls=SynthesisOutput,
-        schema_name="synthesis_output",
+        schema_cls=MultiThemeSynthesis,
+        schema_name="multi_theme_synthesis",
         max_retries=config.max_retries,
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
         gate=gate,
+        repair=lambda p: _repair_multi_theme(p, themes, entry_cls=ThemeSynthesis),
         extra_body=openrouter_extra_body(config),
     )
-    stats.add("synthesis", model, usage)
-    return result.reasoning
+    stats.add(
+        "synthesis",
+        model,
+        usage,
+        theme_ids=[t.id for t in themes],
+        theme_output_chars=_theme_output_chars(result.themes),
+    )
+    return {entry.theme_id: entry.reasoning for entry in result.themes}
 
 
 def _extract_and_fill_location(marker: LocationMarker, chunk) -> Location | None:
@@ -767,16 +851,16 @@ def _extract_and_fill_location(marker: LocationMarker, chunk) -> Location | None
     )
 
 
-async def analyze_map_reduce(
+async def _analyze_map_reduce(
     client: AsyncOpenAI,
     model: str,
-    theme: str,
+    themes: list[Theme],
     transcript: str,
     config: Config,
     stats: RunStats,
     progress: Progress | None = None,
     gate: RequestGate | None = None,
-) -> AnalysisResult:
+) -> list[AnalysisResult]:
     chunks = chunk_transcript(transcript, config.chunk_size_tokens, config.chunk_overlap_tokens)
     semaphore = asyncio.Semaphore(config.max_concurrent_chunks)
     if progress:
@@ -784,61 +868,76 @@ async def analyze_map_reduce(
 
     tasks = [
         _analyze_one_chunk(
-            client, model, theme, chunk, len(chunks), config, stats, semaphore, progress, gate
+            client, model, themes, chunk, len(chunks), config, stats, semaphore, progress, gate
         )
         for chunk in chunks
     ]
     chunk_results = await asyncio.gather(*tasks)
-
-    analyses = [r for r, _ in chunk_results]
     lengths = [c.char_end - c.char_start for _, c in chunk_results]
-    final_score = compute_aggregate_score(analyses, lengths)
 
-    all_locations: list[Location] = [
-        loc
-        for analysis, chunk in chunk_results
-        for marker in analysis.locations
-        if (loc := _extract_and_fill_location(marker, chunk)) is not None
-    ]
-    merged_locations = merge_and_dedupe_locations(all_locations)
+    # Per theme: score, passages and explicitness, each from that theme's own
+    # entries only.
+    final_scores: dict[str, int] = {}
+    passages: dict[str, list[Location]] = {}
+    explicitness: dict[str, str] = {}
+    for theme in themes:
+        analyses = [entries[theme.id] for entries, _ in chunk_results]
+        final_scores[theme.id] = compute_aggregate_score(analyses, lengths)
+        passages[theme.id] = merge_and_dedupe_locations([
+            loc
+            for entries, chunk in chunk_results
+            for marker in entries[theme.id].locations
+            if (loc := _extract_and_fill_location(marker, chunk)) is not None
+        ])
+        # Strongest across chunks: one explicit chunk makes the theme explicit.
+        explicitness[theme.id] = max(
+            (a.explicitness for a in analyses), key=_EXPLICITNESS_RANK.__getitem__
+        )
     if progress:
         progress.note(
-            f"all chunks done, score={final_score}, "
-            f"{len(merged_locations)} passages — synthesizing reasoning"
+            f"all chunks done, {len(themes)} themes, "
+            f"{sum(len(p) for p in passages.values())} passages — synthesizing reasoning"
         )
 
-    reasoning = await _synthesize_reasoning(
-        client, model, theme, final_score, chunk_results, config, stats, progress, gate
+    reasonings = await _synthesize_reasoning(
+        client, model, themes, final_scores, chunk_results, config, stats, progress, gate
     )
 
-    return AnalysisResult(
-        theme=theme,
-        relevance_score=final_score,
-        reasoning=reasoning,
-        locations=merged_locations,
-        model_used=model,
-        chunked=True,
-    )
+    return [
+        AnalysisResult(
+            theme=theme.name,
+            theme_id=theme.id,
+            relevance_score=final_scores[theme.id],
+            explicitness=explicitness[theme.id],
+            reasoning=reasonings[theme.id],
+            locations=passages[theme.id],
+            model_used=model,
+            chunked=True,
+        )
+        for theme in themes
+    ]
 
 
 async def analyze(
     client: AsyncOpenAI,
     model: str,
-    theme: str,
+    themes: list[Theme],
     transcript: str,
     config: Config,
     progress: Progress | None = None,
     gate: RequestGate | None = None,
-) -> tuple[AnalysisResult, RunStats]:
-    """Entry point: picks the single-pass fast path or the chunked map-reduce path."""
+) -> tuple[list[AnalysisResult], RunStats]:
+    """Entry point: picks the single-pass fast path or the chunked map-reduce
+    path. Every theme goes in the same call(s); one result per theme, in
+    theme order."""
     stats = RunStats()
     estimated_tokens = estimate_tokens(transcript)
     if estimated_tokens <= config.single_pass_token_limit:
-        result = await analyze_single_pass(
-            client, model, theme, transcript, config, stats, progress, gate
+        results = await _analyze_single_pass(
+            client, model, themes, transcript, config, stats, progress, gate
         )
     else:
-        result = await analyze_map_reduce(
-            client, model, theme, transcript, config, stats, progress, gate
+        results = await _analyze_map_reduce(
+            client, model, themes, transcript, config, stats, progress, gate
         )
-    return result, stats
+    return results, stats
