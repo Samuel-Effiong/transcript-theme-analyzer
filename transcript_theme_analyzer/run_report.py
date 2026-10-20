@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from html import escape as h
 
 from .cache import read_cache
-from .report import BASE_CSS, _bar_color_var
+from .report import BASE_CSS, _bar_color_var, is_found
 from .themes import Theme
 
 
@@ -172,7 +172,7 @@ def build_run_report(themes: list[Theme], transcripts: dict[str, list[tuple[str,
         per_theme=[
             ThemeCost(
                 theme=t,
-                found=sum(1 for r in rows if r.cells[t.id] and r.cells[t.id].score > 0),
+                found=sum(1 for r in rows if r.cells[t.id] and not _is_absent(r.cells[t.id])),
                 tokens=round(theme_tokens[t.id]),
                 cost=_sum_or_none(theme_costs[t.id]),
             )
@@ -196,7 +196,7 @@ def _money(v: float | None) -> str:
 
 
 def _is_absent(c: Cell) -> bool:
-    return c.score <= 0 or c.explicitness == "absent"
+    return not is_found(c.score, c.explicitness)
 
 
 def _render_cost_summary(c: CostSummary) -> str:

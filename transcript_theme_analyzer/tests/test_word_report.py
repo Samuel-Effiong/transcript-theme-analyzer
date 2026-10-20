@@ -320,3 +320,37 @@ def test_project_theme_payload_without_themes_key_is_an_error():
     legacy = make_success(80, locations=[{"excerpt": "e", "title": "t"}])
     out = project_theme({"ep1": [("m1", legacy)]}, Theme(id="grace", name="Grace"))
     assert out["ep1"][0][1] == {"model": "m1", "error": "no result for theme grace"}
+
+
+def _found_rule_transcripts():
+    """One shared case set for the 'found' rule: score > 0 and not absent."""
+    loc = [{"excerpt": "e", "title": "t"}]
+
+    def e(score, explicitness, locations=loc):
+        return {"theme": "Grace", "relevance_score": score, "explicitness": explicitness,
+                "reasoning": "r", "locations": locations}
+
+    return {
+        "found": [("m1", _multi_payload({"grace": e(40, "explicit")}, {}))],
+        "absent-with-passage": [("m1", _multi_payload({"grace": e(30, "absent")}, {}))],
+        "zero-with-passage": [("m1", _multi_payload({"grace": e(0, "tangential")}, {}))],
+        "found-no-passage": [("m1", _multi_payload({"grace": e(50, "tangential", [])}, {}))],
+    }
+
+
+def test_found_rule_matches_between_docx_and_html(tmp_path):
+    from transcript_theme_analyzer.run_report import build_run_report, render_run_html
+    from transcript_theme_analyzer.themes import Theme
+    from transcript_theme_analyzer.word_report import write_theme_docxs
+
+    themes = [Theme(id="grace", name="Grace")]
+    transcripts = _found_rule_transcripts()
+
+    (path,) = write_theme_docxs(themes, transcripts, str(tmp_path))
+    # docx section <=> found and at least one passage
+    assert _headings(Document(path), 2) == ["Transcript: found"]
+
+    rep = build_run_report(themes, transcripts)
+    assert rep.costs.per_theme[0].found == 2  # "found" and "found-no-passage"
+    html = render_run_html(rep)
+    assert html.count('class="cell cell-absent"') == 2

@@ -6,7 +6,8 @@ that matched that theme:
 - An overview table (transcript × relevance score, in ranked order) right
   after the title, with clickable links that jump to each transcript's
   section further down.
-- One section per transcript with at least one located excerpt, headed
+- One section per transcript where the theme was found (``report.is_found``)
+  with at least one located excerpt, headed
   ``Transcript: <name>`` so an excerpt can always be traced back to its
   source. One sub-heading per excerpt, auto-generated from that excerpt's
   own context rather than just the search keyword.
@@ -26,7 +27,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from .cache import read_cache
-from .report import BatchReport, TranscriptResult, build_report, project_theme
+from .report import BatchReport, TranscriptResult, build_report, is_found, project_theme
 from .themes import Theme
 
 _LINK_COLOR = RGBColor(0x25, 0x6A, 0xBF)  # same blue used for html links/bars
@@ -113,6 +114,7 @@ def _matching_transcripts(report: BatchReport, min_score: int | None) -> list[Tr
     return [
         t for t in report.transcripts
         if t.best_model is not None
+        and is_found(t.best_model.score, t.best_model.explicitness)
         and t.best_model.locations
         and (min_score is None or (t.best_score or 0) >= min_score)
     ]

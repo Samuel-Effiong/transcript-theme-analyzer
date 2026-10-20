@@ -14,10 +14,17 @@ from datetime import datetime, timezone
 from .themes import Theme
 
 
+def is_found(score: int | None, explicitness: str | None) -> bool:
+    """The one rule for "this theme is in this transcript", shared by the
+    HTML grid, its "Found in" counts and the Word documents."""
+    return (score or 0) > 0 and explicitness != "absent"
+
+
 @dataclass
 class ModelResult:
     model: str
     score: int | None = None
+    explicitness: str = ""
     reasoning: str = ""
     locations: list[dict] = field(default_factory=list)
     chunked: bool = False
@@ -60,6 +67,7 @@ def _model_result_from_data(model: str, data: dict) -> ModelResult:
     return ModelResult(
         model=model,
         score=data.get("relevance_score"),
+        explicitness=data.get("explicitness") or "",
         reasoning=data.get("reasoning", ""),
         locations=data.get("locations", []) or [],
         chunked=bool(data.get("chunked", False)),
@@ -104,6 +112,7 @@ def _project_payload(model: str, data: dict, theme: Theme) -> dict:
     tokens = ((meta.get("theme_usage") or {}).get(theme.id) or {}).get("tokens")
     return {
         "relevance_score": entry.get("relevance_score"),
+        "explicitness": entry.get("explicitness", ""),
         "reasoning": entry.get("reasoning", ""),
         "locations": entry.get("locations", []) or [],
         "model_used": data.get("model_used"),
