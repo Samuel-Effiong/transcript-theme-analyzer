@@ -18,6 +18,7 @@ from .aggregate import compute_aggregate_score, merge_and_dedupe_locations
 from .chunker import chunk_transcript, estimate_tokens
 from .config import Config
 from .extraction import extract_passage
+from .pricing import Prices, attribute_call, call_cost, call_discount
 from .schema import (
     AnalysisResult,
     ChunkAnalysis,
@@ -66,15 +67,52 @@ class CallLog:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cached_tokens: int = 0
+    # Cost OpenRouter itself reported for this call (USD), if any.
+    reported_cost: float | None = None
+    theme_ids: list[str] = field(default_factory=list)
+    theme_output_chars: dict[str, int] = field(default_factory=dict)
+    # Filled by RunStats.apply_prices.
+    cost: float | None = None
+    cost_source: str | None = None
+    discount: float | None = None
+
+
+def _cached_tokens(usage) -> int:
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None)
+    if cached is None:
+        # DeepSeek's own field name.
+        cached = getattr(usage, "prompt_cache_hit_tokens", None)
+    return cached or 0
+
+
+def _reported_cost(usage) -> float | None:
+    cost = getattr(usage, "cost", None)
+    if cost is None:
+        cost = (getattr(usage, "model_extra", None) or {}).get("cost")
+    return float(cost) if cost is not None else None
 
 
 @dataclass
 class RunStats:
     calls: list[CallLog] = field(default_factory=list)
+    _prices: Any = field(default=None, repr=False)
 
-    def add(self, label: str, model: str, usage) -> None:
+    def add(
+        self,
+        label: str,
+        model: str,
+        usage,
+        theme_ids=(),
+        theme_output_chars: dict[str, int] | None = None,
+    ) -> None:
+        themes = {
+            "theme_ids": list(theme_ids),
+            "theme_output_chars": dict(theme_output_chars or {}),
+        }
         if usage is None:
-            self.calls.append(CallLog(label=label, model=model))
+            self.calls.append(CallLog(label=label, model=model, **themes))
             return
         self.calls.append(
             CallLog(
@@ -83,19 +121,71 @@ class RunStats:
                 prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
                 completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
                 total_tokens=getattr(usage, "total_tokens", 0) or 0,
+                cached_tokens=_cached_tokens(usage),
+                reported_cost=_reported_cost(usage),
+                **themes,
             )
         )
+
+    def _prices_for(self, call: CallLog) -> Prices | None:
+        if isinstance(self._prices, dict):
+            return self._prices.get(call.model)
+        return self._prices
+
+    def apply_prices(self, prices: "Prices | dict[str, Prices | None] | None") -> None:
+        """Fill each call's cost/source/discount. Takes one Prices for every
+        model, or the per-model dict from ``resolve_prices``."""
+        self._prices = prices
+        for call in self.calls:
+            p = self._prices_for(call)
+            call.cost, call.cost_source = call_cost(call, p)
+            call.discount = call_discount(call, p)
 
     @property
     def total_tokens(self) -> int:
         return sum(c.total_tokens for c in self.calls)
 
     def summary(self) -> dict:
+        costs = [c.cost for c in self.calls]
+        # A partial sum would read as a real total, so any unknown -> unknown.
+        cost = None if not costs or any(x is None for x in costs) else sum(costs)
+        sources = {c.cost_source for c in self.calls if c.cost_source}
+        if len(sources) > 1:
+            cost_source = "mixed"
+        else:
+            cost_source = next(iter(sources), None)
+        discounts = [c.discount for c in self.calls if c.discount is not None]
         return {
             "calls": len(self.calls),
+            "prompt_tokens": sum(c.prompt_tokens for c in self.calls),
+            "completion_tokens": sum(c.completion_tokens for c in self.calls),
+            "cached_tokens": sum(c.cached_tokens for c in self.calls),
             "total_tokens": self.total_tokens,
+            "cost": cost,
+            "cost_source": cost_source,
+            "discount": sum(discounts) if discounts else None,
             "by_call": [c.__dict__ for c in self.calls],
         }
+
+    def theme_usage(self) -> dict[str, dict]:
+        """Estimated tokens and cost per theme, summed over all calls.
+        Cost is None for a theme if any call that touched it has no cost."""
+        usage: dict[str, dict] = {}
+        for call in self.calls:
+            shares = attribute_call(call, self._prices_for(call))
+            for theme_id, (tokens, cost) in shares.items():
+                entry = usage.setdefault(theme_id, {"tokens": 0.0, "cost": 0.0})
+                entry["tokens"] += tokens
+                if cost is None or entry["cost"] is None:
+                    entry["cost"] = None
+                else:
+                    entry["cost"] += cost
+        return usage
+
+
+def openrouter_extra_body(config: Config) -> dict | None:
+    """Ask OpenRouter to include usage accounting (actual cost, cache hits)."""
+    return {"usage": {"include": True}} if config.is_openrouter else None
 
 
 RETRYABLE_EXCEPTIONS = (
@@ -547,6 +637,7 @@ async def analyze_single_pass(
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
         gate=gate,
+        extra_body=openrouter_extra_body(config),
     )
     stats.add("single_pass", model, usage)
     if progress:
@@ -608,6 +699,7 @@ async def _analyze_one_chunk(
             max_output_tokens=config.max_output_tokens,
             label=progress.label if progress else "",
             gate=gate,
+            extra_body=openrouter_extra_body(config),
         )
         stats.add(f"chunk_{chunk.index}", model, usage)
         if progress:
@@ -652,6 +744,7 @@ async def _synthesize_reasoning(
         max_output_tokens=config.max_output_tokens,
         label=progress.label if progress else "",
         gate=gate,
+        extra_body=openrouter_extra_body(config),
     )
     stats.add("synthesis", model, usage)
     return result.reasoning
