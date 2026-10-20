@@ -202,11 +202,22 @@ def write_theme_docxs(
     out_dir: str,
 ) -> list[str]:
     """Write one Word report per theme to ``out_dir/docx/<theme.id>.docx``
-    (theme ids are filesystem-safe slugs); returns the paths in theme order."""
+    (theme ids are filesystem-safe slugs); returns the paths in theme order.
+
+    Any other ``*.docx`` directly in that folder is a previous run's theme
+    and is removed, so the folder only ever holds this run's themes."""
+    docx_dir = os.path.join(out_dir, "docx")
     paths = []
     for theme in themes:
         report = build_report(theme.name, project_theme(transcripts, theme))
-        paths.append(write_docx(report, os.path.join(out_dir, "docx", f"{theme.id}.docx")))
+        paths.append(write_docx(report, os.path.join(docx_dir, f"{theme.id}.docx")))
+    current = {f"{theme.id}.docx" for theme in themes}
+    for name in os.listdir(docx_dir) if os.path.isdir(docx_dir) else []:
+        path = os.path.join(docx_dir, name)
+        # "~$" is Word's lock file for a document someone has open.
+        if (name.endswith(".docx") and not name.startswith("~$")
+                and name not in current and os.path.isfile(path)):
+            os.remove(path)
     return paths
 
 

@@ -354,3 +354,21 @@ def test_found_rule_matches_between_docx_and_html(tmp_path):
     assert rep.costs.per_theme[0].found == 2  # "found" and "found-no-passage"
     html = render_run_html(rep)
     assert html.count('class="cell cell-absent"') == 2
+
+
+def test_stale_theme_docx_removed_on_rerun(tmp_path):
+    from transcript_theme_analyzer.themes import Theme
+    from transcript_theme_analyzer.word_report import write_theme_docxs
+
+    docx_dir = tmp_path / "docx"
+    docx_dir.mkdir()
+    (docx_dir / "old-theme.docx").write_bytes(b"stale")
+    (docx_dir / "notes.txt").write_text("keep me")
+    (docx_dir / "nested").mkdir()
+    (docx_dir / "nested" / "other.docx").write_bytes(b"keep")
+
+    transcripts = {"ep1": [("m1", _multi_payload({"grace": _grace_entry()}, {}))]}
+    write_theme_docxs([Theme(id="grace", name="Grace")], transcripts, str(tmp_path))
+
+    assert sorted(p.name for p in docx_dir.iterdir()) == ["grace.docx", "nested", "notes.txt"]
+    assert (docx_dir / "nested" / "other.docx").exists()
