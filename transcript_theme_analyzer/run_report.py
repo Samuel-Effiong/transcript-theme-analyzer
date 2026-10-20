@@ -2,7 +2,10 @@
 
 ``build_run_report`` turns the multi-theme run payloads (see ``report`` for
 the ``transcripts`` shape) into a ``RunReport``; ``render_run_html`` renders
-one self-contained page (inline CSS/JS only).
+one self-contained page (inline CSS/JS only). The grid and cost sections are
+plain HTML; a cell's reasoning and passages sit in one JSON blob and are
+built into the page only when that cell is clicked, which keeps a
+thousands-of-transcripts page small and quick to open.
 
 Usage (regenerate later from the internal cache, without re-running analysis):
     python -m transcript_theme_analyzer.run_report --cache results/.raw_results.json
@@ -10,6 +13,7 @@ Usage (regenerate later from the internal cache, without re-running analysis):
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -17,7 +21,7 @@ from datetime import datetime, timezone
 from html import escape as h
 
 from .cache import read_cache
-from .report import BASE_CSS, _bar_color_var, _render_locations_html
+from .report import BASE_CSS, _bar_color_var
 from .themes import Theme
 
 
@@ -28,6 +32,8 @@ class Cell:
     explicitness: str
     reasoning: str
     locations: list[dict]
+    # The other models' scores for this theme, payload order; None = failed.
+    others: list[tuple[str, int | None]] = field(default_factory=list)
 
 
 @dataclass
@@ -78,13 +84,22 @@ def _ok_payloads(payloads: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
     return [(m, d) for m, d in payloads if "error" not in d and isinstance(d.get("themes"), dict)]
 
 
-def _best_cell(ok: list[tuple[str, dict]], theme: Theme) -> Cell | None:
+def _theme_score(data: dict, theme: Theme) -> int | None:
+    themes = data.get("themes")
+    if "error" in data or not isinstance(themes, dict):
+        return None
+    return (themes.get(theme.id) or {}).get("relevance_score")
+
+
+def _best_cell(payloads: list[tuple[str, dict]], theme: Theme) -> Cell | None:
     best: Cell | None = None
-    for model, data in ok:
+    best_data: dict | None = None
+    for model, data in _ok_payloads(payloads):
         e = data["themes"].get(theme.id)
         if not e or e.get("relevance_score") is None:
             continue
         if best is None or e["relevance_score"] > best.score:
+            best_data = data
             best = Cell(
                 model=model,
                 score=e["relevance_score"],
@@ -92,6 +107,8 @@ def _best_cell(ok: list[tuple[str, dict]], theme: Theme) -> Cell | None:
                 reasoning=e.get("reasoning", ""),
                 locations=e.get("locations", []) or [],
             )
+    if best is not None:
+        best.others = [(m, _theme_score(d, theme)) for m, d in payloads if d is not best_data]
     return best
 
 
@@ -123,7 +140,6 @@ def build_run_report(themes: list[Theme], transcripts: dict[str, list[tuple[str,
     theme_costs: dict[str, list[float | None]] = {t.id: [] for t in themes}
 
     for name, payloads in transcripts.items():
-        ok = _ok_payloads(payloads)
         # Usage counts from every payload that has it: a failed run still
         # paid for the calls it made.
         usages = _usages(payloads)
@@ -137,7 +153,7 @@ def build_run_report(themes: list[Theme], transcripts: dict[str, list[tuple[str,
         rows.append(
             RunRow(
                 name=name,
-                cells={t.id: _best_cell(ok, t) for t in themes},
+                cells={t.id: _best_cell(payloads, t) for t in themes},
                 tokens=_tok(usages, "total_tokens"),
                 cost=_sum_or_none([u.get("cost") for u in usages]),
                 has_usage=bool(usages),
@@ -237,8 +253,9 @@ def _render_cell(i: int, t: Theme, cell: Cell | None) -> str:
         return f'<td class="cell cell-absent" {attrs} data-score="0">–</td>'
     cls = "cell cell-tangential" if cell.explicitness == "tangential" else "cell"
     fg = "#fff" if cell.score >= 40 else "#0b0b0b"
+    # data-row: this cell has a detail entry (rows[i - 1] in the JSON blob).
     return (
-        f'<td class="{cls}" {attrs} data-score="{cell.score}" data-target="d-{i}-{h(t.id)}" '
+        f'<td class="{cls}" {attrs} data-score="{cell.score}" data-row="{i}" tabindex="0" '
         f'style="background:{_bar_color_var(cell.score)}; color:{fg};">{cell.score}</td>'
     )
 
@@ -272,25 +289,42 @@ def _render_grid(r: RunReport) -> str:
     """
 
 
-def _render_details(r: RunReport, top_locations: int) -> str:
-    out = []
-    for i, row in enumerate(r.rows, start=1):
+def _detail_data(r: RunReport, top_locations: int) -> dict:
+    """What the click-to-open panel needs, for found cells only. A passage
+    reported under several themes is stored once per transcript."""
+    rows = []
+    for row in r.rows:
+        locations: list[dict] = []
+        seen: dict[str, int] = {}
+        cells = {}
         for t in r.themes:
             c = row.cells[t.id]
             if c is None or _is_absent(c):
                 continue
-            out.append(f"""
-    <details class="transcript-detail" id="d-{i}-{h(t.id)}">
-      <summary>{h(row.name)} &middot; {h(t.name)} <span class="score-pill">{c.score}</span></summary>
-      <div class="detail-body">
-        <p class="run-meta">model: <code>{h(c.model)}</code> &middot; {h(c.explicitness)}</p>
-        <h4>Reasoning</h4>
-        <p class="reasoning">{h(c.reasoning)}</p>
-        <h4>Key locations</h4>
-        {_render_locations_html(c.locations, top_locations)}
-      </div>
-    </details>""")
-    return "".join(out)
+            refs = []
+            for loc in c.locations[:top_locations]:
+                key = json.dumps(loc, sort_keys=True)
+                if key not in seen:
+                    seen[key] = len(locations)
+                    locations.append(loc)
+                refs.append(seen[key])
+            cells[t.id] = {
+                "model": c.model,
+                "score": c.score,
+                "explicitness": c.explicitness,
+                "reasoning": c.reasoning,
+                "locations": refs,
+                "more": max(len(c.locations) - top_locations, 0),
+                "others": [[m, score] for m, score in c.others],
+            }
+        rows.append({"name": row.name, "locations": locations, "cells": cells})
+    return {"themes": {t.id: t.name for t in r.themes}, "rows": rows}
+
+
+def _json_for_script(data: dict) -> str:
+    """JSON safe inside <script>: no "<" survives, so no "</script>" either.
+    ``\\u003c`` is still "<" once JSON.parse has read it."""
+    return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
 
 
 EXTRA_CSS = r"""
@@ -309,7 +343,7 @@ EXTRA_CSS = r"""
   .grid-scroll td::before { content: none; }
   .grid-scroll .row-name { position: sticky; left: 0; background: var(--surface-1); text-align: left; font-weight: 500; }
   .cell { text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4rem; }
-  .cell[data-target] { cursor: pointer; }
+  .cell[data-row] { cursor: pointer; }
   .cell-tangential { outline: 2px dashed var(--muted); outline-offset: -4px; font-style: italic; }
   .cell-absent { color: var(--muted); }
   .col-usage { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
@@ -323,6 +357,8 @@ JS = r"""
       var tbody = table.querySelector('tbody');
       var picker = document.getElementById('theme-picker');
       var filter = document.getElementById('transcript-filter');
+      var panel = document.getElementById('detail');
+      var data = JSON.parse(document.getElementById('detail-data').textContent);
 
       function rows() { return Array.prototype.slice.call(tbody.querySelectorAll('tr.grid-row')); }
 
@@ -354,16 +390,75 @@ JS = r"""
         });
       }
 
+      var timer = null;
       picker.addEventListener('change', apply);
-      filter.addEventListener('input', apply);
-
-      // Clicking a cell opens its details and scrolls to them.
-      table.addEventListener('click', function(e) {
-        var td = e.target.closest ? e.target.closest('td.cell') : null;
-        if (!td || !td.dataset.target) return;
-        var el = document.getElementById(td.dataset.target);
-        if (el) { el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      filter.addEventListener('input', function() {
+        clearTimeout(timer);
+        timer = setTimeout(apply, 150);
       });
+
+      // Every piece of data goes in via textContent, never as markup.
+      function el(tag, cls, text) {
+        var node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      function excerpt(text) {
+        var quote = el('blockquote');
+        var parts = (text || '').split('\n\n').map(function(p) { return p.trim(); })
+          .filter(function(p) { return p; });
+        if (!parts.length) parts = [(text || '').trim()];
+        parts.forEach(function(p) { quote.appendChild(el('p', null, p)); });
+        return quote;
+      }
+
+      function show(rowIdx, themeId) {
+        var row = data.rows[rowIdx - 1];
+        var c = row && row.cells[themeId];
+        if (!c) return;
+        panel.textContent = '';
+        var head = el('h3', null, row.name + ' \u00b7 ' + data.themes[themeId] + ' ');
+        head.appendChild(el('span', 'score-pill', String(c.score)));
+        panel.appendChild(head);
+        var meta = el('p', 'run-meta', 'model: ');
+        meta.appendChild(el('code', null, c.model));
+        meta.appendChild(document.createTextNode(' \u00b7 ' + c.explicitness));
+        panel.appendChild(meta);
+        if (c.others.length) {
+          panel.appendChild(el('p', 'run-meta other-models', 'other models: ' + c.others.map(function(o) {
+            return o[0] + '=' + (o[1] === null ? 'error' : o[1]);
+          }).join(' / ')));
+        }
+        panel.appendChild(el('h4', null, 'Reasoning'));
+        panel.appendChild(el('p', 'reasoning', c.reasoning));
+        panel.appendChild(el('h4', null, 'Key locations'));
+        if (!c.locations.length) {
+          panel.appendChild(el('p', 'muted', 'No specific locations recorded.'));
+        } else {
+          var list = el('ul', 'locations');
+          c.locations.forEach(function(i) {
+            var loc = row.locations[i];
+            var li = el('li');
+            li.appendChild(el('span', 'loc-title', loc.title || 'Relevant Passage'));
+            li.appendChild(el('span', 'loc-meta', [loc.timestamp, loc.speaker].filter(function(b) { return b; }).join(' \u00b7 ')));
+            li.appendChild(excerpt(loc.excerpt));
+            list.appendChild(li);
+          });
+          panel.appendChild(list);
+        }
+        if (c.more > 0) panel.appendChild(el('p', 'muted', '+' + c.more + ' more location(s).'));
+        panel.hidden = false;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      function open(e) {
+        var td = e.target.closest ? e.target.closest('td.cell') : null;
+        if (td && td.dataset.row) show(parseInt(td.dataset.row, 10), td.dataset.theme);
+      }
+      table.addEventListener('click', open);
+      table.addEventListener('keydown', function(e) { if (e.key === 'Enter') open(e); });
     })();
 """
 
@@ -391,9 +486,11 @@ def render_run_html(report: RunReport, top_locations: int = 5) -> str:
     {_render_grid(report)}
 
     <h2>Details</h2>
-    {_render_details(report, top_locations)}
+    <p class="muted">Click a score in the grid to see its reasoning and passages here.</p>
+    <section class="transcript-detail" id="detail" hidden></section>
   </div>
 
+  <script type="application/json" id="detail-data">{_json_for_script(_detail_data(report, top_locations))}</script>
   <script>{JS}  </script>
 </body>
 </html>

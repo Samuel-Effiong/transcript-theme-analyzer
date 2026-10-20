@@ -3,14 +3,13 @@
 ``project_theme`` narrows the multi-theme run payloads (as produced by
 ``cli.py``) to one theme, and ``build_report`` turns that into a
 ``BatchReport`` — the structure ``word_report.py`` renders to docx. The CSS
-and location/bar helpers here are shared with ``run_report.py``, which
-renders the run-wide ``report.html``.
+and bar-colour helper here are used by ``run_report.py``, which renders the
+run-wide ``report.html``.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from html import escape as h
 
 from .themes import Theme
 
@@ -283,33 +282,3 @@ def _bar_color_var(score: int) -> str:
     if score >= 40:
         return "var(--seq-500)"
     return "var(--seq-300)"
-
-
-def _render_excerpt_html(excerpt: str) -> str:
-    """Renders a (possibly multi-paragraph) excerpt as one <p> per source
-    paragraph inside the blockquote, instead of flattening paragraph breaks
-    into a single run-on line."""
-    paragraphs = [p.strip() for p in excerpt.split("\n\n") if p.strip()] or [excerpt.strip()]
-    inner = "".join(f"<p>{h(p)}</p>" for p in paragraphs)
-    return f"<blockquote>{inner}</blockquote>"
-
-
-def _render_locations_html(locations: list[dict], limit: int) -> str:
-    if not locations:
-        return "<p class='muted'>No specific locations recorded.</p>"
-    items = []
-    for loc in locations[:limit]:
-        ts = loc.get("timestamp")
-        speaker = loc.get("speaker")
-        meta_bits = [b for b in (ts, speaker) if b]
-        meta_str = h(" · ".join(meta_bits)) if meta_bits else ""
-        title = h(loc.get("title") or "Relevant Passage")
-        excerpt_html = _render_excerpt_html(loc.get("excerpt") or "")
-        items.append(
-            f"<li><span class='loc-title'>{title}</span>"
-            f"<span class='loc-meta'>{meta_str}</span>"
-            f"{excerpt_html}</li>"
-        )
-    more = len(locations) - limit
-    more_note = f"<p class='muted'>+{more} more location(s).</p>" if more > 0 else ""
-    return f"<ul class='locations'>{''.join(items)}</ul>{more_note}"

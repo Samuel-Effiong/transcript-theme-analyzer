@@ -1,3 +1,4 @@
+import json
 import re
 
 from transcript_theme_analyzer.run_report import (
@@ -156,12 +157,86 @@ def test_best_model_per_theme_wins_when_models_disagree():
     assert cells["b"].score == 90 and cells["b"].model == "m1"
 
 
+def _detail_data(html):
+    m = re.search(r'<script type="application/json" id="detail-data">(.*?)</script>', html, re.S)
+    assert m, "detail data blob missing"
+    return json.loads(m.group(1))
+
+
 def test_details_and_picker_present(tmp_path):
     tr = {"t1": [("m1", payload({"a": entry(50, reasoning="because")}))]}
     out = write_run_html([A], tr, str(tmp_path / "sub" / "report.html"))
     html = open(out, encoding="utf-8").read()
-    assert 'id="d-1-a"' in html
-    assert "because" in html
+    assert 'id="detail"' in html
+    assert "<details" not in html  # panels are built on click, not up front
+    data = _detail_data(html)
+    assert data["rows"][0]["cells"]["a"]["reasoning"] == "because"
+    assert re.search(r'<td class="cell"[^>]*data-theme="a"[^>]*data-row="1"', html)
     assert "All themes" in html
     assert "<select" in html
     assert "src=" not in html and "href=\"http" not in html
+
+
+def test_only_found_cells_get_detail_data():
+    tr = {
+        "t1": [("m1", payload({"a": entry(50), "b": entry(0, "absent")}))],
+        "t2": [("m1", {"model": "m1", "error": "boom"})],
+    }
+    html = render_run_html(build_run_report([A, B], tr))
+    data = _detail_data(html)
+    assert list(data["rows"][0]["cells"]) == ["a"]
+    assert data["rows"][1]["cells"] == {}
+    assert html.count("data-row=") == 1
+
+
+def test_detail_json_cannot_break_out_of_its_script_tag():
+    evil = "</script><script>alert(1)</script>"
+    loc = {"excerpt": evil, "title": evil, "timestamp": None, "speaker": None}
+    tr = {evil: [("m1", payload({"a": entry(50, reasoning=evil, locations=[loc])}))]}
+    html = render_run_html(build_run_report([A], tr))
+    # Exactly the two closing tags the page itself has: data blob and JS.
+    assert html.count("</script>") == 2
+    assert "<script>alert(1)" not in html
+    data = _detail_data(html)
+    row = data["rows"][0]
+    assert row["name"] == evil
+    assert row["cells"]["a"]["reasoning"] == evil
+    assert row["locations"][0]["excerpt"] == evil
+
+
+def test_shared_passages_stored_once_and_capped_per_cell():
+    locs = [{"excerpt": f"p{i}", "title": None, "timestamp": None, "speaker": None} for i in range(7)]
+    tr = {"t1": [("m1", payload({"a": entry(50, locations=locs), "b": entry(40, locations=locs[:2])}))]}
+    data = _detail_data(render_run_html(build_run_report([A, B], tr), top_locations=5))
+    row = data["rows"][0]
+    assert [l["excerpt"] for l in row["locations"]] == ["p0", "p1", "p2", "p3", "p4"]
+    assert row["cells"]["a"]["locations"] == [0, 1, 2, 3, 4]
+    assert row["cells"]["a"]["more"] == 2
+    assert row["cells"]["b"]["locations"] == [0, 1]
+    assert row["cells"]["b"]["more"] == 0
+
+
+def test_other_models_listed_in_detail():
+    tr = {
+        "t1": [
+            ("m1", payload({"a": entry(20)})),
+            ("m2", payload({"a": entry(80)})),
+            ("m3", {"model": "m3", "error": "boom"}),
+        ]
+    }
+    data = _detail_data(render_run_html(build_run_report([A], tr)))
+    cell = data["rows"][0]["cells"]["a"]
+    assert cell["model"] == "m2"
+    assert cell["others"] == [["m1", 20], ["m3", None]]
+
+
+def test_single_model_has_no_others():
+    tr = {"t1": [("m1", payload({"a": entry(20)}))]}
+    data = _detail_data(render_run_html(build_run_report([A], tr)))
+    assert data["rows"][0]["cells"]["a"]["others"] == []
+
+
+def test_filter_is_debounced_and_detail_uses_text_content():
+    html = render_run_html(build_run_report([A], {"t1": [("m1", payload({"a": entry(5)}))]}))
+    assert "setTimeout(apply, 150)" in html
+    assert "innerHTML" not in html
