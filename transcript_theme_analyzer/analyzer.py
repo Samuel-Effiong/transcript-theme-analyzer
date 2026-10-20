@@ -649,7 +649,8 @@ async def _call_with_retry(
             _record(attempt, resp, getattr(result, "themes", ()))
             return result, resp.usage
         except TruncatedResponseError as exc:
-            _record(attempt, resp)
+            if getattr(resp, "usage", None) is not None:
+                _record(attempt, resp)
             if max_output_tokens is None:
                 # No cap of ours: the model's own output ceiling, which the
                 # same request hits every time.

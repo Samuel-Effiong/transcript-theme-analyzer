@@ -112,14 +112,18 @@ def _best_cell(payloads: list[tuple[str, dict]], theme: Theme) -> Cell | None:
     return best
 
 
+def _counted(payloads: list[tuple[str, dict]]) -> list[dict]:
+    """Payloads whose usage counts: every successful run, plus a failed run
+    that made calls. An error with no usage (unreadable transcript, failure
+    before any response) paid for nothing and must not make a figure n/a."""
+    return [
+        d for _, d in payloads
+        if "error" not in d or (d.get("_meta") or {}).get("usage")
+    ]
+
+
 def _usages(payloads: list[tuple[str, dict]]) -> list[dict]:
-    """Every successful run's usage, plus a failed run's when it made calls."""
-    out = []
-    for _, d in payloads:
-        usage = (d.get("_meta") or {}).get("usage")
-        if "error" not in d or usage:
-            out.append(usage or {})
-    return out
+    return [((d.get("_meta") or {}).get("usage") or {}) for d in _counted(payloads)]
 
 
 def _tok(usages: list[dict], key: str) -> int:
@@ -144,7 +148,7 @@ def build_run_report(themes: list[Theme], transcripts: dict[str, list[tuple[str,
         # paid for the calls it made.
         usages = _usages(payloads)
         all_usages += usages
-        for _, d in payloads:
+        for d in _counted(payloads):
             tu = (d.get("_meta") or {}).get("theme_usage") or {}
             for t in themes:
                 u = tu.get(t.id) or {}

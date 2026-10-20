@@ -240,3 +240,19 @@ def test_filter_is_debounced_and_detail_uses_text_content():
     html = render_run_html(build_run_report([A], {"t1": [("m1", payload({"a": entry(5)}))]}))
     assert "setTimeout(apply, 150)" in html
     assert "innerHTML" not in html
+
+
+def test_pre_call_error_payload_does_not_make_costs_unknown():
+    """An error with no _meta (unreadable transcript, failure before any
+    response) made no paid call: it must not turn any figure into n/a."""
+    tr = {
+        "ok": [("m1", payload({"a": entry(5)}, use=usage(cost=0.01),
+                              theme_usage={"a": {"tokens": 10, "cost": 0.004}}))],
+        "bad": [("m1", {"model": "m1", "error": "rate limit"})],
+    }
+    rep = build_run_report([A], tr)
+    assert rep.costs.cost == 0.01
+    assert rep.costs.total_tokens == 150
+    assert rep.costs.per_theme[0].cost == 0.004
+    assert rep.costs.per_theme[0].tokens == 10
+    assert rep.rows[1].has_usage is False and rep.rows[1].cost is None
