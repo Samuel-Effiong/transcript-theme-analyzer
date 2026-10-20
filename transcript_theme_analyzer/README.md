@@ -1,8 +1,8 @@
 # Transcript Theme-Relevance Analyzer
 
-Scores how thoroughly a transcript discusses a given theme, with a per-run
-`relevance_score` (0-100), `reasoning`, and a list of `locations` in the
-source transcript — model-agnostic (OpenAI direct or any OpenAI-compatible
+Scores how thoroughly a transcript discusses one or more themes (up to
+`MAX_THEMES` per run, default 5), with a per-theme `relevance_score` (0-100),
+`reasoning`, and a list of `locations` in the source transcript — model-agnostic (OpenAI direct or any OpenAI-compatible
 endpoint, e.g. OpenRouter), and safe for transcripts from 30 minutes to
 10+ hours of audio.
 
@@ -18,7 +18,12 @@ transcript_theme_analyzer/
 ├── aggregate.py       # merges chunk-level results into final result
 ├── prompts.py         # the analysis/synthesis system prompts (versioned constants)
 ├── loader.py          # detects .txt/.docx input format, extracts plain text
-├── cli.py            # run one or many (transcript, theme, model) combos, save results
+├── themes.py          # theme list: --theme / CSV parsing, unique ids, the MAX_THEMES check
+├── pricing.py         # per-call cost (reported or tokens x prices), provider discount, per-theme split
+├── report.py          # shared results data model + per-theme projection of a run
+├── run_report.py      # report.html: every transcript x every theme, plus the cost section
+├── word_report.py     # docx/<theme_id>.docx: one Word report per theme
+├── cli.py            # run one or many (transcript, themes, model) combos, save results
 ├── eval/
 │   └── compare_models.py   # run same input across multiple models, side-by-side comparison
 ├── samples/           # sample transcripts + sample output JSON (see below)
@@ -44,7 +49,7 @@ Create a `.env` in your working directory (or export the equivalent env vars):
 LLM_PROVIDER=openrouter
 LLM_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_API_KEY=sk-or-...
-LLM_DEFAULT_MODEL=anthropic/claude-sonnet-5
+LLM_DEFAULT_MODEL=deepseek/deepseek-v4-flash
 
 # --- OpenAI direct (swap by changing only these three lines) ---
 # LLM_PROVIDER=openai
@@ -57,15 +62,21 @@ CHUNK_OVERLAP_TOKENS=800
 SINGLE_PASS_TOKEN_LIMIT=20000
 MAX_CONCURRENT_CHUNKS=8
 LLM_MAX_RETRIES=5
+
+# Most themes allowed in one run (default 5). Over the limit = rejected up front.
+MAX_THEMES=5
 ```
+
+The code's default model is `deepseek/deepseek-v4-flash`; set
+`LLM_DEFAULT_MODEL` (or pass `--models`) to use another. No output token cap
+is applied unless you set `LLM_MAX_OUTPUT_TOKENS`.
 
 Switching providers is a config-only change (`client.py` never hardcodes a
 provider) — same pipeline code runs against OpenAI or any OpenAI-compatible
 endpoint by changing `base_url` / `api_key` / the model string.
 
-> **Model ID note:** `anthropic/claude-sonnet-5` is this repo's default per
-> Anthropic's current model catalog (`claude-sonnet-5`, not the older
-> `claude-sonnet-4.5`). OpenRouter mirrors upstream provider model IDs as
+> **Model ID note:** `anthropic/claude-sonnet-5` is Anthropic's current
+> model (`claude-sonnet-5`, not the older `claude-sonnet-4.5`). OpenRouter mirrors upstream provider model IDs as
 > `anthropic/<model-id>`, but OpenRouter's catalog is a third-party listing —
 > confirm the exact slug at https://openrouter.ai/models before relying on it
 > in production, since it can lag a provider's own naming.
@@ -79,27 +90,63 @@ carries no meaning for a theme-relevance judgment, but paragraph breaks are
 preserved (one paragraph per line), since the chunker's speaker-label
 detection depends on line boundaries.
 
-Single model:
+Single model, one theme:
 
 ```bash
 python -m transcript_theme_analyzer.cli --transcript path.docx --theme "the glory of God"
 ```
 
-Multiple models per transcript (the best-scoring model's excerpts are what
-show up in the reports; the others are listed for comparison):
+Several themes at once. Repeat `--theme`; every theme goes in the **same**
+LLM call per transcript (or per chunk), so each extra theme costs far less than
+a separate run:
 
 ```bash
 python -m transcript_theme_analyzer.cli \
-  --transcript path.docx --theme "the glory of God" \
+  --transcript path.docx --theme "the glory of God" --theme "forgiveness" --theme "prayer"
+```
+
+Or read the themes from a CSV with `--themes-file`:
+
+```bash
+python -m transcript_theme_analyzer.cli --transcript path.docx --themes-file themes.csv
+```
+
+```csv
+theme,description
+forgiveness,"Extending or receiving pardon, including reconciliation"
+prayer,
+the glory of God,
+```
+
+The header needs a `theme` column; `description` is optional and, when given,
+is shown to the model to disambiguate the theme. Header names are
+case-insensitive and blank rows are skipped. `--theme` and `--themes-file`
+combine (the `--theme` entries come first). Duplicate theme names are rejected.
+
+**Theme limit.** A run takes at most `MAX_THEMES` themes (env var, default 5;
+`--max-themes N` overrides it for one run). Over the limit, the run stops
+before any API call, exit code 2:
+
+```
+You entered 7 themes. The limit is 5 (MAX_THEMES). Remove 2 theme(s) or raise MAX_THEMES.
+```
+
+Multiple models per transcript (for each transcript and theme, the
+best-scoring model's excerpts are what show up in the reports; the others are
+listed for comparison):
+
+```bash
+python -m transcript_theme_analyzer.cli \
+  --transcript path.docx --theme "the glory of God" --theme "forgiveness" \
   --models gpt-4.1 anthropic/claude-sonnet-5 google/gemini-2.5-pro
 ```
 
-A whole folder of transcripts against the same theme (mixing `.txt` and
+A whole folder of transcripts against the same themes (mixing `.txt` and
 `.docx` files freely):
 
 ```bash
 python -m transcript_theme_analyzer.cli \
-  --transcript-dir path/to/transcripts/ --theme "forgiveness" \
+  --transcript-dir path/to/transcripts/ --theme "forgiveness" --theme "prayer" \
   --models anthropic/claude-sonnet-5
 ```
 
@@ -111,65 +158,88 @@ instead of after other transcripts in the same batch have already been
 (expensively) analyzed. A file that fails to read *during* the batch (e.g. a
 docx that's corrupt in a way the upfront check didn't catch) doesn't abort
 the run — that transcript is recorded as failed and shows up as `FAILED` in
-both reports, same as a model-call failure.
+the reports, same as a model-call failure.
 
 ## Outputs
 
-Every CLI run produces exactly two files in `--out-dir` (default `results/`),
-both ranked by relevance score, highest first:
+Every CLI run writes these into `--out-dir` (default `results/`):
 
-- **`report.docx`** — a single consolidated Word document, not one file per
-  transcript:
-  - **Title** — the search theme.
-  - **Overview table** right under the title, listing every transcript and
-    its relevance score; transcript names are clickable links that jump
-    straight to that transcript's section further down (transcripts with no
-    located excerpts, or where every model run failed, still show up in the
-    table with their score/`FAILED`, just without a link — there's nothing
-    to jump to).
+- **`report.html`** — one self-contained, no-dependency interactive page for
+  the current run (all transcripts x all themes):
+  - A results table with one score column per theme and a relevance bar per
+    cell; click any column header to sort, and use the filter box to narrow by
+    transcript name.
+  - A detail panel per transcript (reasoning + key excerpts for each theme,
+    including zero-score or failed ones) — the full audit view.
+  - A **Cost** section with tokens and cost for the run, and a **Per theme**
+    table (see below).
+  - Mobile-friendly and light/dark styled.
+- **`docx/<theme_id>.docx`** — one Word document per theme (the id is a slug of
+  the theme name, e.g. `docx/forgiveness.docx`), the curated excerpt deliverable:
+  - **Title** — the theme.
+  - **Overview table** listing every transcript and its relevance score, ranked
+    highest first; transcript names are clickable links to that transcript's
+    section (transcripts with no located excerpts, or where every model run
+    failed, still show up with their score/`FAILED`, just without a link).
   - **One section per transcript** that has at least one located excerpt,
-    headed `Transcript: <name>`, so an excerpt can always be traced back to
-    its source.
+    headed `Transcript: <name>`.
   - **One sub-heading per passage**, a short section-title (2-6 words)
-    generated from that passage's own content (not the search keyword),
-    with the full continuous passage underneath — not a single short quote,
-    but the entire span of the transcript that discusses the theme at that
-    point, however long that runs — and its timestamp/speaker if known.
-- **`report.html`** — a self-contained, no-dependency interactive page:
-  - A sortable ranked table (click any column header) with a relevance bar
-    per transcript, and a live filter box to narrow by transcript name.
-  - Clicking a transcript name jumps to and expands its detail panel
-    (reasoning + key excerpts) further down the page.
-  - Mobile-friendly: the table collapses into stacked cards below ~640px
-    wide instead of squeezing into unreadable columns.
-  - Light/dark mode both styled.
-  - Unlike the docx, every analyzed transcript gets a detail panel here
-    (including zero-score or failed ones) — the html is the full audit view,
-    the docx is the curated excerpt deliverable.
+    generated from that passage's own content, with the full continuous
+    passage underneath and its timestamp/speaker if known.
 
 Failed model runs (e.g. a rate limit or timeout) are captured per-model and
 shown as `FAILED`/error rather than crashing either report.
 
-Alongside those two, each run also writes a dot-prefixed internal cache file,
-`.raw_results.json` — **not** one of the two outputs above, just enough raw
-data to regenerate `report.html`/`report.docx` later without re-running the
-(paid) analysis:
+> **Reusing `--out-dir`:** `docx/` files from an earlier run with *different*
+> themes are **not** removed, so they would sit next to the new ones. Use a
+> fresh `--out-dir` for each theme set.
+
+### Cost reporting
+
+Tokens and cost appear in the `report.html` Cost section:
+
+- **Actual vs estimated.** When OpenRouter reports the amount it charged
+  (`usage.cost`), that figure is used. Otherwise the cost is tokens x prices,
+  from `LLM_PRICE_INPUT_PER_M` / `LLM_PRICE_CACHED_INPUT_PER_M` /
+  `LLM_PRICE_OUTPUT_PER_M` (USD per 1M tokens; env values win) or OpenRouter's
+  public price list. If neither is known the figure is shown as `n/a`, never
+  `$0.00`.
+- **Totals vs per-theme.** Run totals and per-transcript figures are exact.
+  Themes share one call, so the per-theme tokens and cost are marked **est.**
+- **Provider discount.** Cached input tokens x (input price - cached price) —
+  an estimate from list prices. OpenRouter's list price can differ from the
+  rate actually charged, so the reported cost is the authoritative number.
+
+### Regenerating the reports
+
+Each run also writes dot-prefixed internal files — **not** final outputs:
+`.raw_results.json` (enough raw data to regenerate the reports without
+re-running the paid analysis) and `.checkpoint.jsonl` (resume state). To rebuild:
 
 ```bash
-python -m transcript_theme_analyzer.report --cache results/.raw_results.json
-python -m transcript_theme_analyzer.word_report --cache results/.raw_results.json
-# optionally: --out custom_name.{html,docx} --min-score 50 (docx only)
+python -m transcript_theme_analyzer.run_report --cache results/.raw_results.json [--out path.html]
+python -m transcript_theme_analyzer.word_report --cache results/.raw_results.json [--out-dir dir]
 ```
 
-`--min-score` (docx regeneration only) restricts sections to transcripts
-whose best score meets a threshold (by default, any transcript with a
-located excerpt gets a section).
+`run_report` rewrites `report.html` (next to the cache by default); `word_report`
+rewrites `docx/<theme_id>.docx` under `--out-dir` (default: the cache's folder).
 
-Comparison table (score / token cost proxy / latency / reasoning) across models:
+### Resuming
+
+Re-running the same command after an interruption picks up where it left off.
+A checkpoint is reused only when the theme set (order does not matter; names
+and descriptions do), the models and the prompt version are all unchanged;
+otherwise the run starts fresh. `--no-resume` ignores the checkpoint.
+
+### Comparing models
+
+Score and locations per theme, plus total tokens and cost, for each model on
+one transcript (themes via repeated `--theme` or `--themes-file`; the same
+`MAX_THEMES` limit applies):
 
 ```bash
 python -m transcript_theme_analyzer.eval.compare_models \
-  --transcript path.txt --theme "forgiveness" \
+  --transcript path.txt --theme "forgiveness" --theme "prayer" \
   --models gpt-4.1 anthropic/claude-sonnet-5
 ```
 
@@ -184,8 +254,8 @@ python -m transcript_theme_analyzer.eval.compare_models \
   overlapping chunks (`chunker.py`), each carrying its character-offset
   range, chunk index, and (if detected) the nearest embedded timestamp /
   speaker label. Each chunk is analyzed independently and concurrently
-  (bounded by `MAX_CONCURRENT_CHUNKS`) against the same theme, producing a
-  partial score, reasoning, and locations per chunk.
+  (bounded by `MAX_CONCURRENT_CHUNKS`) against the same themes (all in one call per chunk), producing a
+  partial score, reasoning, and locations per chunk and theme.
 - **Aggregation (`aggregate.py`):** the final `relevance_score` is an
   explicit, tunable heuristic — not a naive max or average of chunk scores:
 
@@ -232,9 +302,10 @@ both transient API errors and JSON parse/validation failures).
 
 ## Cost / token logging
 
-Every call's token usage is recorded (`RunStats` in `analyzer.py`) and
-included under `_meta.usage` in each result JSON and in the comparison
-table, so multi-model runs can be judged on cost as well as quality.
+Every call's token usage and cost are recorded (`RunStats` in `analyzer.py`,
+prices from `pricing.py`) and included under `_meta.usage` in each result, in
+the `report.html` Cost section (see *Cost reporting* above) and in the
+comparison table, so multi-model runs can be judged on cost as well as quality.
 
 ## Sample outputs
 
@@ -244,7 +315,8 @@ table, so multi-model runs can be judged on cost as well as quality.
 - `long_transcript.txt` / `sample_output_long_chunked.json` — demonstrates
   the **chunked map-reduce** path (`"chunked": true`).
 
-These sample outputs were generated with a content-aware stub client (this
+The sample output JSONs predate multi-theme runs (one theme, old shape).
+They were generated with a content-aware stub client (this
 sandbox has no live API key) that mimics the shape of a real model response —
 they demonstrate the pipeline's wiring and output schema, not real model
 judgment. Run the CLI yourself with a real key to get real analysis.

@@ -44,3 +44,60 @@ def test_theme_is_repeatable_and_optional():
     assert args.theme == []
     assert args.themes_file == "themes.csv"
     assert args.max_themes == 8
+
+
+def test_compare_models_rejects_over_limit_themes(tmp_path, monkeypatch, capsys):
+    import pytest
+
+    from transcript_theme_analyzer.eval import compare_models
+
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("hello", encoding="utf-8")
+
+    def boom(*_a, **_k):
+        raise AssertionError("no API access before the theme limit check")
+
+    monkeypatch.setattr(compare_models, "make_client", boom)
+    monkeypatch.setattr(compare_models, "resolve_prices", boom)
+    argv = ["--transcript", str(transcript), "--models", "m1", "--max-themes", "1",
+            "--theme", "a", "--theme", "b"]
+    with pytest.raises(SystemExit) as exc:
+        compare_models.main(argv)
+    assert exc.value.code == 2
+    assert "You entered 2 themes. The limit is 1 (MAX_THEMES)." in capsys.readouterr().err
+
+
+def test_compare_models_prints_row_per_theme_and_totals(tmp_path, monkeypatch, capsys):
+    from transcript_theme_analyzer.eval import compare_models
+
+    transcript = tmp_path / "t.txt"
+    transcript.write_text("hello", encoding="utf-8")
+
+    class FakeClient:
+        closed = False
+
+        async def close(self):
+            FakeClient.closed = True
+
+    async def fake_run_one_model(text, themes, model, config, client, label="", gate=None, prices=None):
+        return {
+            "themes": {
+                t.id: {"theme": t.name, "relevance_score": 7, "locations": [{}, {}]}
+                for t in themes
+            },
+            "_meta": {
+                "elapsed_seconds": 1.0,
+                "usage": {"total_tokens": 1234, "cost": None},
+            },
+        }
+
+    monkeypatch.setattr(compare_models, "make_client", lambda config: FakeClient())
+    monkeypatch.setattr(compare_models, "resolve_prices", lambda models, config: {})
+    monkeypatch.setattr(compare_models, "run_one_model", fake_run_one_model)
+    compare_models.main(["--transcript", str(transcript), "--models", "m1", "m2",
+                         "--theme", "forgiveness", "--theme", "prayer"])
+    out = capsys.readouterr().out
+    assert FakeClient.closed
+    assert out.count("forgiveness") >= 2 and out.count("prayer") >= 2
+    assert "1,234" in out
+    assert "n/a" in out
