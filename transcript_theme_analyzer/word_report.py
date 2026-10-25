@@ -229,9 +229,17 @@ def _add_transcript_sections(
             _add_excerpt(document, location)
 
 
+def _add_theme_title(document: Document, report: BatchReport) -> None:
+    """Heading = the theme's label; the full theme text follows as a paragraph
+    when it is longer than the label, so each file records what was asked."""
+    document.add_heading(report.theme, level=1)
+    if report.theme_text and report.theme_text != report.theme:
+        document.add_paragraph(report.theme_text)
+
+
 def build_docx(report: BatchReport, min_score: int | None = None) -> Document:
     document = Document()
-    document.add_heading(report.theme, level=1)
+    _add_theme_title(document, report)
     document.add_paragraph(f"Generated {report.generated_at}")
 
     matched = _matching_transcripts(report, min_score)
@@ -256,7 +264,7 @@ def build_volume_docx(
     ``Volume N of M`` line, an overview of only this volume's transcripts
     (all linked) and their full sections."""
     document = Document()
-    document.add_heading(report.theme, level=1)
+    _add_theme_title(document, report)
     document.add_paragraph(f"Volume {volume_no} of {volume_count}")
     document.add_paragraph(f"Generated {report.generated_at}")
     _add_overview_table(document, report, {id(t) for t in volume}, transcripts=volume)
@@ -269,7 +277,7 @@ def build_index_docx(report: BatchReport, volume_of: dict[int, int]) -> Document
     score, passage count and the volume that holds it. ``volume_of`` maps
     ``id(transcript)`` to a 1-based volume number for the matched ones."""
     document = Document()
-    document.add_heading(report.theme, level=1)
+    _add_theme_title(document, report)
     document.add_paragraph(f"Index of {max(volume_of.values(), default=0)} volumes")
     document.add_paragraph(f"Generated {report.generated_at}")
     _add_index_table(document, report, volume_of)
@@ -346,7 +354,7 @@ def write_theme_docxs(
     docx_dir = os.path.join(out_dir, "docx")
     paths: list[str] = []
     for theme in themes:
-        report = build_report(theme.name, project_theme(transcripts, theme))
+        report = build_report(theme.name, project_theme(transcripts, theme), theme_text=theme.text)
         plan = _plan_volumes(_matching_transcripts(report, None), volume_words)
         if len(plan) <= 1:
             paths.append(write_docx(report, os.path.join(docx_dir, f"{theme.id}.docx")))

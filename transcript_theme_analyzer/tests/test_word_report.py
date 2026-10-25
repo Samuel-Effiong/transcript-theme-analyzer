@@ -565,3 +565,30 @@ def test_volume_directory_with_foreign_file_loses_only_tool_files(tmp_path):
     (tmp_path / "docx" / "old" / "my-notes.txt").write_text("keep")
     write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([100]), str(tmp_path), volume_words=1000)
     assert sorted(p.name for p in (tmp_path / "docx" / "old").iterdir()) == ["my-notes.txt"]
+
+
+# --- label heading and full theme text ------------------------------------
+
+def test_long_theme_prints_label_heading_and_full_text_once(tmp_path):
+    long_text = "Teachings about God's will for an individual's personal decisions and calling"
+    theme = Theme(id="teachings-about-gods-will-for-an", name="Teachings about God's will for an", text=long_text)
+    (path,) = write_theme_docxs([theme], _big_run([100], theme_id=theme.id), str(tmp_path))
+    doc = Document(path)
+    assert _headings(doc, 1) == ["Teachings about God's will for an"]
+    assert doc.paragraphs[1].text == long_text
+    assert sum(p.text == long_text for p in doc.paragraphs) == 1
+
+
+def test_short_theme_has_no_text_paragraph(tmp_path):
+    (path,) = write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([100]), str(tmp_path))
+    doc = Document(path)
+    assert doc.paragraphs[1].text.startswith("Generated ")
+
+
+def test_volume_and_index_carry_the_full_text(tmp_path):
+    theme = Theme(id="grace", name="Grace", text="Grace as unmerited favour, not as a reward")
+    paths = write_theme_docxs([theme], _big_run([700, 700]), str(tmp_path), volume_words=1000)
+    for path in paths:
+        doc = Document(path)
+        assert _headings(doc, 1) == ["Grace"]
+        assert doc.paragraphs[1].text == theme.text

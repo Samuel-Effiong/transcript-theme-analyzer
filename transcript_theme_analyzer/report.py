@@ -53,9 +53,10 @@ class TranscriptResult:
 
 @dataclass
 class BatchReport:
-    theme: str
+    theme: str  # the short label
     transcripts: list[TranscriptResult]
     generated_at: str
+    theme_text: str = ""  # the full theme text when it differs from the label
 
 
 def _model_result_from_data(model: str, data: dict) -> ModelResult:
@@ -76,7 +77,9 @@ def _model_result_from_data(model: str, data: dict) -> ModelResult:
     )
 
 
-def build_report(theme: str, transcripts: dict[str, list[tuple[str, dict]]]) -> BatchReport:
+def build_report(
+    theme: str, transcripts: dict[str, list[tuple[str, dict]]], theme_text: str = ""
+) -> BatchReport:
     """Build a report directly from in-memory run payloads — one entry per
     transcript name, each a list of ``(model_name, payload_dict)`` pairs (as
     produced by ``cli.run_one_model``; a failed run's payload is
@@ -97,8 +100,7 @@ def build_report(theme: str, transcripts: dict[str, list[tuple[str, dict]]]) -> 
     return BatchReport(
         theme=theme,
         transcripts=transcript_results,
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-    )
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), theme_text=theme_text)
 
 
 def _project_payload(model: str, data: dict, theme: Theme) -> dict:

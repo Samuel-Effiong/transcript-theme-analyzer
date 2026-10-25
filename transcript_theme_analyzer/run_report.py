@@ -230,10 +230,21 @@ def _render_cost_summary(c: CostSummary) -> str:
     """
 
 
+def _theme_text_div(theme: Theme) -> str:
+    """The full theme text, printed once under the label when it is longer."""
+    if theme.text == theme.name:
+        return ""
+    return f'<div class="theme-text">{h(theme.text)}</div>'
+
+
+def _theme_title_attr(theme: Theme) -> str:
+    return "" if theme.text == theme.name else f' title="{h(theme.text)}"'
+
+
 def _render_theme_table(c: CostSummary, n_transcripts: int) -> str:
     rows = "".join(
         f"""<tr>
-      <td data-label="Theme">{h(tc.theme.name)}</td>
+      <td data-label="Theme">{h(tc.theme.name)}{_theme_text_div(tc.theme)}</td>
       <td data-label="Found in">{tc.found} / {n_transcripts}</td>
       <td data-label="Tokens (est.)">{tc.tokens:,}</td>
       <td data-label="Cost (est.)">{_money(tc.cost)}</td>
@@ -265,7 +276,9 @@ def _render_cell(i: int, t: Theme, cell: Cell | None) -> str:
 
 
 def _render_grid(r: RunReport) -> str:
-    head = "".join(f'<th data-theme="{h(t.id)}">{h(t.name)}</th>' for t in r.themes)
+    head = "".join(
+        f'<th data-theme="{h(t.id)}"{_theme_title_attr(t)}>{h(t.name)}</th>' for t in r.themes
+    )
     body = []
     for i, row in enumerate(r.rows, start=1):
         cells = "".join(_render_cell(i, t, row.cells[t.id]) for t in r.themes)
@@ -332,6 +345,7 @@ def _json_for_script(data: dict) -> str:
 
 
 EXTRA_CSS = r"""
+    .theme-text { font-size: 0.85em; color: var(--text-secondary); margin-top: 0.2rem; font-weight: normal; }
   .wrap { max-width: 1100px; }
   .controls { display: flex; gap: 0.75rem; flex-wrap: wrap; }
   .controls select { font-size: 0.95rem; padding: 0.6rem 0.85rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }

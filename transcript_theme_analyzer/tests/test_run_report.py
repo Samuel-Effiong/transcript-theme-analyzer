@@ -256,3 +256,14 @@ def test_pre_call_error_payload_does_not_make_costs_unknown():
     assert rep.costs.per_theme[0].cost == 0.004
     assert rep.costs.per_theme[0].tokens == 10
     assert rep.rows[1].has_usage is False and rep.rows[1].cost is None
+
+
+def test_grid_header_shows_label_with_full_text_on_hover():
+    long_theme = Theme(id="c", name="Calling and the will", text='Calling and the will of God for an individual\'s "life" <plan>')
+    tr = {"t1": [("m1", payload({"a": entry(50), "c": entry(70)}))]}
+    html = render_run_html(build_run_report([A, long_theme], tr))
+    assert '<th data-theme="a">Alpha</th>' in html
+    assert '<th data-theme="c" title="Calling and the will of God for an individual&#x27;s &quot;life&quot; &lt;plan&gt;">Calling and the will</th>' in html
+    assert html.count('class="theme-text"') == 1
+    assert "<title>Theme Analysis: Alpha, Calling and the will</title>" in html
+    assert '"life" <plan>' not in html
