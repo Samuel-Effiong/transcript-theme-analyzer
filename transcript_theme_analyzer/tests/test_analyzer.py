@@ -347,3 +347,11 @@ def test_truncated_response_with_cap_points_at_the_cap():
             client, "m", THEMES, "short transcript", _cfg(max_retries=5, max_output_tokens=100)
         ))
     assert comp.calls == 1
+
+
+def test_repair_multi_theme_maps_an_entry_labelled_by_full_text_to_its_id():
+    theme = Theme("a", "Alpha", "Alpha, the first letter")
+    parsed = {"themes": [{"theme_id": "Alpha, the first letter", "relevance_score": 10,
+                          "explicitness": "tangential", "reasoning": "r", "locations": []}]}
+    repaired = analyzer._repair_multi_theme(parsed, [theme])
+    assert [e["theme_id"] for e in repaired["themes"]] == ["a"]

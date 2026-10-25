@@ -133,3 +133,17 @@ def test_old_single_theme_records_are_not_reused(tmp_path):
         fh.write(json.dumps({"signature": old_sig, "key": "a.txt", "display_name": "a",
                              "results": [{"model": "model-a", "payload": _payload()}]}) + "\n")
     assert read_checkpoint(path, THEME, MODELS) == {}
+
+
+def test_signature_covers_text_id_and_prompt_version(monkeypatch):
+    base = _signature([Theme("a", "Alpha", "Alpha x")], MODELS)
+    assert base != _signature([Theme("a", "Alpha", "Alpha y")], MODELS)
+    assert base != _signature([Theme("a2", "Alpha", "Alpha x")], MODELS)
+    assert base == _signature([Theme("a", "Different label", "Alpha x")], MODELS)
+    assert json.loads(base) == {
+        "themes": [["a", "Alpha x"]],
+        "models": sorted(MODELS),
+        "prompt": prompts.PROMPT_VERSION,
+    }
+    monkeypatch.setattr(prompts, "PROMPT_VERSION", "other")
+    assert base != _signature([Theme("a", "Alpha", "Alpha x")], MODELS)

@@ -440,7 +440,7 @@ def _repair_multi_theme(parsed, themes: list[Theme], entry_cls=ThemeChunkAnalysi
     """Repair a ``{"themes": [...]}`` answer against the requested theme list.
 
     Each entry's ``theme_id`` is matched case-insensitively against a theme's
-    id or name (models sometimes echo the display name). Unknown and duplicate
+    id, label or full text (models sometimes echo what they were shown). Unknown and duplicate
     entries are dropped (first wins), each kept entry gets the per-entry
     repair, and entries come back in input-theme order. A theme the model
     skipped can't be defaulted without fabricating an assessment, so it
@@ -454,6 +454,7 @@ def _repair_multi_theme(parsed, themes: list[Theme], entry_cls=ThemeChunkAnalysi
         lookup[theme.id.casefold()] = theme
     for theme in themes:
         lookup.setdefault(theme.name.casefold(), theme)
+        lookup.setdefault(theme.text.casefold(), theme)
 
     by_id: dict[str, dict] = {}
     for entry in parsed["themes"]:
@@ -838,7 +839,7 @@ async def _synthesize_reasoning(
                 f"score {result.relevance_score}, {result.explicitness}): {result.reasoning}"
             )
         sections.append(
-            f"THEME id: {theme.id} | {theme.name}\n"
+            f"THEME id: {theme.id} | {theme.text}\n"
             f"OVERALL COMPUTED SCORE: {final_scores[theme.id]}\n"
             f"PER-SEGMENT PARTIAL ANALYSES (in transcript order):\n" + "\n".join(lines)
         )

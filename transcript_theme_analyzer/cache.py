@@ -14,6 +14,7 @@ from .themes import Theme
 
 CACHE_FILENAME = ".raw_results.json"
 OLD_FORMAT_MESSAGE = "This cache was written by the single-theme version; re-run the analysis."
+PRE_V4_MESSAGE = "This cache was written before prompt v4; re-run the analysis."
 
 
 def write_cache(
@@ -40,6 +41,10 @@ def read_cache(path: str) -> tuple[list[Theme], dict[str, list[tuple[str, dict]]
         # Single-theme payloads have no per-theme entries, so there is nothing
         # the multi-theme reports could honestly render from them.
         raise ValueError(OLD_FORMAT_MESSAGE)
+    if any("description" in t for t in data["themes"]):
+        # Pre-v4 themes were a name plus a description; v4 themes are one text
+        # judged by a different prompt, so the old answers cannot be reused.
+        raise ValueError(PRE_V4_MESSAGE)
     themes = [Theme(**t) for t in data["themes"]]
     transcripts = {
         name: [(entry["model"], entry["payload"]) for entry in entries]

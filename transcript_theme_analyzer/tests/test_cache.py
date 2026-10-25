@@ -126,3 +126,24 @@ def test_word_report_main_honours_docx_volume_words(tmp_path, capsys, monkeypatc
     # below the floor clamps to 1000, so the two 700-word transcripts still split
     word_report.main(["--cache", path, "--docx-volume-words", "1"])
     assert (tmp_path / "docx" / "glory" / "glory-vol-02.docx").exists()
+
+
+@pytest.mark.parametrize("module", [run_report, word_report])
+def test_regen_mains_exit_1_on_pre_v4_cache(tmp_path, capsys, module):
+    path = tmp_path / ".raw_results.json"
+    path.write_text(json.dumps({
+        "themes": [{"id": "glory", "name": "the glory of God", "description": "His majesty"}],
+        "results": {},
+    }), encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        module.main(["--cache", str(path)])
+    assert exc.value.code == 1
+    assert capsys.readouterr().err.strip() == "This cache was written before prompt v4; re-run the analysis."
+
+
+def test_round_trip_keeps_theme_text(tmp_path):
+    themes = [Theme("glory", "the glory of God", "the glory of God in creation and redemption")]
+    path = write_cache(themes, {"ep1": [("m1", make_success(80))]}, str(tmp_path))
+    loaded, _ = read_cache(path)
+    assert loaded == themes
+    assert loaded[0].text == "the glory of God in creation and redemption"
