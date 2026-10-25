@@ -1,0 +1,1631 @@
+<title>The Transcript Pipeline Model Decision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --ground:        #F4F6F4;
+    --surface:       #FFFFFF;
+    --surface-sunk:  #EAEEEC;
+    --ink:           #14201E;
+    --ink-soft:      #3A4A46;
+    --muted:         #61726D;
+    --rule:          #D6DEDA;
+    --rule-strong:   #B6C2BD;
+    --accent:        #0F5257;
+    --accent-ink:    #0B3E42;
+    --accent-wash:   #E3EEEE;
+    --caution:       #8A5411;
+    --caution-wash:  #F6EDDF;
+    --costly:        #8C3A2E;
+    --shadow:        0 1px 2px rgba(20, 32, 30, .06), 0 8px 24px -16px rgba(20, 32, 30, .28);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:        #0E1413;
+      --surface:       #151D1B;
+      --surface-sunk:  #1B2523;
+      --ink:           #E7EEEB;
+      --ink-soft:      #C3CFCB;
+      --muted:         #90A19C;
+      --rule:          #29342F;
+      --rule-strong:   #3C4A45;
+      --accent:        #63BFC0;
+      --accent-ink:    #8FD6D5;
+      --accent-wash:   #16302F;
+      --caution:       #D8A65E;
+      --caution-wash:  #2C2418;
+      --costly:        #E08A78;
+      --shadow:        0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -18px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:        #0E1413;
+    --surface:       #151D1B;
+    --surface-sunk:  #1B2523;
+    --ink:           #E7EEEB;
+    --ink-soft:      #C3CFCB;
+    --muted:         #90A19C;
+    --rule:          #29342F;
+    --rule-strong:   #3C4A45;
+    --accent:        #63BFC0;
+    --accent-ink:    #8FD6D5;
+    --accent-wash:   #16302F;
+    --caution:       #D8A65E;
+    --caution-wash:  #2C2418;
+    --costly:        #E08A78;
+    --shadow:        0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -18px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 120px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 44px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+  .masthead h1 {
+    font-family: "Newsreader", Georgia, "Times New Roman", serif;
+    font-weight: 500;
+    font-size: clamp(2.3rem, 5.4vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0 0 18px;
+    max-width: 20ch;
+  }
+  .standfirst {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: clamp(1.06rem, 2vw, 1.28rem);
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .docmeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 34px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .docmeta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- layout ---------- */
+
+  .body-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+  @media (min-width: 1000px) {
+    .body-grid { grid-template-columns: 216px minmax(0, 1fr); gap: 64px; align-items: start; }
+    .toc { position: sticky; top: 32px; }
+  }
+
+  .toc h2 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    counter-reset: toc;
+  }
+  .toc a {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 4px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 14px;
+    line-height: 1.32;
+  }
+  .toc a::before {
+    counter-increment: toc;
+    content: counter(toc, decimal-leading-zero);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    padding-top: 2px;
+  }
+  .toc a:hover, .toc a:focus-visible { color: var(--accent); }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 60px; }
+
+  section { scroll-margin-top: 24px; }
+
+  .sect-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-top: 1px solid var(--rule-strong);
+    padding-top: 16px;
+    margin-bottom: 22px;
+  }
+  .sect-num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: .06em;
+    flex: none;
+    padding-top: 6px;
+  }
+  h2.sect-title {
+    font-family: "Newsreader", Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(1.55rem, 3.2vw, 2.05rem);
+    line-height: 1.16;
+    letter-spacing: -.012em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  h3 {
+    font-family: "Public Sans", sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: .005em;
+    margin: 34px 0 10px;
+    color: var(--ink);
+  }
+  h4 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 28px 0 10px;
+  }
+
+  p { max-width: 68ch; margin: 0 0 16px; }
+  p.wide { max-width: none; }
+
+  ul, ol.body-list { max-width: 68ch; padding-left: 20px; margin: 0 0 18px; }
+  li { margin-bottom: 8px; }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, .toc a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .87em;
+  }
+  code {
+    background: var(--surface-sunk);
+    padding: .1em .35em;
+    border-radius: 3px;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- key figure block ---------- */
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 26px 0 30px;
+  }
+  .figure { background: var(--surface); padding: 20px 20px 18px; }
+  .figure .val {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 2.1rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .figure .lbl {
+    font-size: 13.5px;
+    color: var(--muted);
+    line-height: 1.35;
+    display: block;
+  }
+
+  /* ---------- callouts ---------- */
+
+  .callout {
+    background: var(--accent-wash);
+    border-left: 3px solid var(--accent);
+    padding: 18px 22px;
+    margin: 24px 0;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout p { max-width: 64ch; }
+
+  .callout.caution {
+    background: var(--caution-wash);
+    border-left-color: var(--caution);
+  }
+  .callout .tag {
+    display: block;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin-bottom: 8px;
+  }
+  .callout.caution .tag { color: var(--caution); }
+
+  /* ---------- quoted source ---------- */
+
+  blockquote.pull {
+    margin: 24px 0;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--rule-strong);
+  }
+  blockquote.pull p {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 1.12rem;
+    line-height: 1.5;
+    color: var(--ink);
+    margin: 0 0 12px;
+    max-width: 60ch;
+  }
+  blockquote.pull cite {
+    font-style: normal;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    display: block;
+    max-width: 60ch;
+  }
+
+  /* ---------- tables ---------- */
+
+  .tablewrap {
+    overflow-x: auto;
+    margin: 22px 0 12px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 520px;
+    font-size: 14.5px;
+  }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 14px 18px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  thead th {
+    font-weight: 600;
+    font-size: 12.5px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule-strong);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.name { font-weight: 500; }
+  tr.rule-top td { border-top: 1px solid var(--rule-strong); }
+  tr.highlight td { background: var(--accent-wash); }
+  .costly { color: var(--costly); }
+  .good { color: var(--accent); }
+  .tnote {
+    font-size: 13px;
+    color: var(--muted);
+    max-width: 68ch;
+    margin: 0 0 4px;
+  }
+
+  /* objection table reads as prose, not data */
+  table.qa { min-width: 620px; font-size: 15px; }
+  table.qa td:first-child { width: 34%; font-weight: 500; }
+  table.qa td { line-height: 1.5; }
+
+  /* ---------- svg figure ---------- */
+
+  figure.diagram { margin: 30px 0 34px; }
+  figure.diagram svg { width: 100%; height: auto; display: block; }
+  figcaption {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-top: 14px;
+    max-width: 72ch;
+  }
+  figcaption b { color: var(--ink-soft); font-weight: 500; }
+
+  .dg-panel   { fill: var(--surface); stroke: var(--rule); stroke-width: 1; }
+  .dg-box     { fill: var(--surface-sunk); stroke: var(--rule-strong); stroke-width: 1; }
+  .dg-box-acc { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.25; }
+  .dg-arrow   { stroke: var(--rule-strong); stroke-width: 1.4; fill: none; }
+  .dg-arrow-acc { stroke: var(--accent); stroke-width: 1.4; fill: none; }
+  .dg-head    { fill: var(--rule-strong); }
+  .dg-head-acc{ fill: var(--accent); }
+  .dg-closed  { stroke: var(--costly); stroke-width: 1.5; stroke-dasharray: 6 4; }
+  .dg-open    { stroke: var(--accent); stroke-width: 1.5; }
+  .dg-t {
+    fill: var(--ink);
+    font-family: "Public Sans", sans-serif;
+    font-size: 13px;
+  }
+  .dg-t-b { font-weight: 600; }
+  .dg-t-s {
+    fill: var(--muted);
+    font-family: "Public Sans", sans-serif;
+    font-size: 11.5px;
+  }
+  .dg-lbl {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    fill: var(--muted);
+  }
+  .dg-lbl-closed { fill: var(--costly); }
+  .dg-lbl-open   { fill: var(--accent); }
+  .dg-hd {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .11em;
+    fill: var(--ink-soft);
+  }
+
+  /* ---------- application catalogue ---------- */
+
+  .appgroup { margin: 30px 0 0; }
+  .appgroup > h4 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .appgroup > h4::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+  .appgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .appcard {
+    background: var(--surface);
+    padding: 16px 18px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .appcard .nm { font-weight: 600; font-size: 15px; line-height: 1.3; }
+  .appcard p { margin: 0; font-size: 14px; line-height: 1.48; color: var(--ink-soft); max-width: none; }
+  .appcard .serves {
+    margin-top: auto;
+    padding-top: 8px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .appcard.built { background: var(--accent-wash); }
+  .appcard.built .serves { color: var(--accent-ink); }
+
+  /* ---------- the three-things diagram ---------- */
+
+  .stack {
+    display: grid;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 24px 0 28px;
+  }
+  .layer {
+    background: var(--surface);
+    padding: 18px 22px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  @media (min-width: 720px) {
+    .layer { grid-template-columns: 186px minmax(0, 1fr); gap: 24px; align-items: baseline; }
+  }
+  .layer .who {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .layer.ours { background: var(--accent-wash); }
+  .layer.ours .who { color: var(--accent-ink); }
+  .layer p { margin: 0; max-width: 62ch; }
+  .layer .what { font-weight: 600; display: block; margin-bottom: 3px; }
+
+  /* ---------- the ask ---------- */
+
+  .asks {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    counter-reset: ask;
+    margin: 26px 0;
+  }
+  .ask {
+    background: var(--surface);
+    padding: 20px 22px;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .ask::before {
+    counter-increment: ask;
+    content: counter(ask);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+  .ask h3 { margin: 0 0 6px; }
+  .ask p { margin: 0; max-width: 60ch; }
+  .ask .price {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--muted);
+    display: block;
+    margin-top: 8px;
+  }
+
+  footer.colophon {
+    margin-top: 76px;
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-size: 13.5px;
+    color: var(--muted);
+    max-width: 72ch;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Decision proposal &middot; Transcript Insight Pipeline</p>
+    <h1>Buy the intelligence, not the brand</h1>
+    <p class="standfirst">A recommendation that the sermon transcript theme-extraction pipeline run through OpenRouter on a low-cost default model, with premium models reserved for adjudication and quality assurance — and the evidence, the arithmetic, and the objections that go with it.</p>
+    <div class="docmeta">
+      <span><b>Prepared for</b> Gospel Light House leadership</span>
+      <span><b>Date</b> 27 August 2026</span>
+      <span><b>Decision required</b> Credit approval &amp; pilot go-ahead</span>
+      <span><b>Prices verified</b> 27 August 2026</span>
+    </div>
+  </header>
+
+  <div class="body-grid">
+
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#summary">Executive summary</a></li>
+        <li><a href="#current">What the pipeline does today</a></li>
+        <li><a href="#cost">The cost analysis</a></li>
+        <li><a href="#gap">Why the price gap exists</a></li>
+        <li><a href="#layers">Subscription, API, and our own asset</a></li>
+        <li><a href="#platform">One key, many applications</a></li>
+        <li><a href="#hybrid">Optionality and hybrid tiering</a></li>
+        <li><a href="#risks">Risks and objections</a></li>
+        <li><a href="#ask">The recommendation</a></li>
+        <li><a href="#appendix">Appendix: sources &amp; assumptions</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- ============ 1. EXEC SUMMARY ============ -->
+      <section id="summary">
+        <div class="sect-head">
+          <span class="sect-num">01</span>
+          <h2 class="sect-title">Executive summary</h2>
+        </div>
+
+        <p><strong>The request.</strong> Approve a <strong>$100 prepaid OpenRouter balance</strong> and a <strong>paid pilot on 50 transcripts</strong> (estimated cost: under $5). If the pilot's results hold up, adopt a low-cost model as the pipeline's production default, with a premium Claude model re-scoring the small subset of transcripts that actually reach publication.</p>
+
+        <p><strong>Nothing has to be built.</strong> The pipeline is already provider-agnostic. Its configuration already names OpenRouter as the provider and a DeepSeek model as the default. Changing which model does the work is one line in a configuration file — not an engineering project, not a migration, not a cost. We are not asking permission to build the switch. We are asking permission to use the one that is already there.</p>
+
+        <p><strong>The number.</strong> Analysing all 1,800 transcripts for one theme costs roughly <strong>$154 on Claude Opus 5</strong> and roughly <strong>$1.89 on DeepSeek V4 Flash</strong> — a factor of about <strong>81×</strong>. Against Claude Sonnet 5 the factor is about <strong>33×</strong>. These are modelled from the pipeline's own configuration constants and today's published prices; the calculator is in the repository and anyone can re-run it.</p>
+
+        <div class="figures">
+          <div class="figure">
+            <span class="val">81&times;</span>
+            <span class="lbl">Cost ratio, Claude Opus 5 to DeepSeek V4 Flash, on one full-corpus run</span>
+          </div>
+          <div class="figure">
+            <span class="val">$1.89</span>
+            <span class="lbl">One theme across all 1,800 transcripts on the proposed default</span>
+          </div>
+          <div class="figure">
+            <span class="val">$7.02</span>
+            <span class="lbl">Same run with Claude Sonnet 5 re-scoring the top 150 as quality assurance</span>
+          </div>
+          <div class="figure">
+            <span class="val">1 line</span>
+            <span class="lbl">Configuration change required to switch models. No code change.</span>
+          </div>
+        </div>
+
+        <h3>The argument is about iteration, not about a single invoice</h3>
+
+        <p>$154 is not a frightening number, and this proposal will not pretend it is. Frontier model prices have fallen sharply — Claude Opus 5 costs a third of what the previous Opus generation did. One run of one theme at frontier prices is affordable.</p>
+
+        <p>But a run is never one run. <strong>Every theme is a full pass over the corpus.</strong> Ten themes is ten runs. Every prompt refinement, every schema correction, every re-analysis after new transcripts arrive is another full run. That is where the multiplier bites:</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>First-year research programme, 55-minute average transcript</caption>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th class="num">Claude Opus 5</th>
+                <th class="num">Claude Sonnet 5</th>
+                <th class="num">DeepSeek V4 Flash</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="name">1 theme (baseline)</td>
+                <td class="num costly">$153.88</td>
+                <td class="num">$61.55</td>
+                <td class="num good">$1.89</td>
+              </tr>
+              <tr>
+                <td class="name">10 themes</td>
+                <td class="num costly">$1,538.82</td>
+                <td class="num">$615.53</td>
+                <td class="num good">$18.90</td>
+              </tr>
+              <tr>
+                <td class="name">10 themes + 3 re-runs after prompt revisions</td>
+                <td class="num costly">$2,000.47</td>
+                <td class="num">$800.19</td>
+                <td class="num good">$24.57</td>
+              </tr>
+              <tr>
+                <td class="name">Cost of discovering one bad prompt afterwards</td>
+                <td class="num costly">$153.88</td>
+                <td class="num">$61.55</td>
+                <td class="num good">$1.89</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <span class="tag">The core of the case</span>
+          <p>An expensive model does not merely cost more. It makes the team afraid to run the pipeline. A budget that punishes iteration produces worse research, because themes that cannot be justified on an invoice simply never get explored, and a prompt nobody dares re-run never gets improved. <strong>The cheap model does not buy us a discount. It buys us permission to be thorough.</strong></p>
+        </div>
+
+        <h3>What we are not saying</h3>
+
+        <p>This is not a proposal against Claude. Claude is excellent, and its chat interface is the best interactive tool of its kind — we are not proposing to cancel it, and the team should keep using it for exploratory and conversational work. Nor is it a claim that all models are equally capable. It is a narrower claim: <em>our</em> task is a bounded, well-specified one, and the current generation of mid-tier models does it reliably. We are paying frontier prices for a commodity operation.</p>
+
+        <div class="callout">
+          <span class="tag">Before anything else, one correction of a common assumption</span>
+          <p><strong>The Claude subscription we already pay for cannot fund this work — at any tier.</strong> A Claude subscription buys seats on Claude's chat apps; it does not include API access, and it cannot issue the key an application needs. In Anthropic's own words, it "doesn't include access to the Claude API or Console." These are two separate products on two separate accounts with two separate invoices. So the choice in front of us is not <em>subscription versus API</em> — that money is already committed elsewhere and cannot be redirected. The choice is which API to buy, and this document argues for the one that is not locked to a single vendor. Section 5 sets out the full distinction, including the one narrow exception and why it does not apply to us.</p>
+        </div>
+
+        <p>And OpenRouter is not a bet against Claude either. Claude Opus 5 is available through OpenRouter at exactly the same published price as buying it from Anthropic directly — $5 and $25 per million input and output tokens. Choosing OpenRouter costs us nothing in Claude access. It simply means we stop being locked into one vendor for work that does not require them.</p>
+
+        <h3>The part of this decision with the longest reach</h3>
+
+        <p>The cost argument is the easiest to verify, but it is not the largest thing on offer. An API key is not a line item for one project — it is <strong>the ability to build our own software with AI as the engine</strong>. The Claude interface we admire is itself just an application someone built on top of a model; with a key, we can build the version that fits Gospel Light House specifically. An assistant that answers from our own sermon archive and cites the sermon it drew from. Semantic search across everything ever preached. Automatic show notes, subtitles and translation for the media library. Drafting help inside the tools staff already use.</p>
+
+        <p>None of those require a new vendor, a new contract, or a new approval — they run on the same key and the same balance as the transcript pipeline. And because different jobs suit different engines, a router is what lets each one use the right model instead of forcing every job onto a single vendor's. <a href="#platform">Section 6</a> sets this out in full, with the catalogue and the limits.</p>
+
+        <div class="callout caution">
+          <span class="tag">Read this before you read any number below</span>
+          <p><strong>The corpus has not been measured yet.</strong> Every figure in this document assumes 1,800 transcripts averaging 55 minutes. If the real average is 90 minutes, costs rise about 45%; if it is 150 minutes, transcripts cross the pipeline's chunking threshold and costs rise more than threefold. The cost calculator takes the true average as an input. <strong>Measuring the corpus is the first task of the pilot</strong>, and it is the single assumption most capable of moving these numbers.</p>
+        </div>
+      </section>
+
+      <!-- ============ 2. CURRENT STATE ============ -->
+      <section id="current">
+        <div class="sect-head">
+          <span class="sect-num">02</span>
+          <h2 class="sect-title">What the pipeline does today</h2>
+        </div>
+
+        <p>The Transcript Theme Extraction pipeline reads a corpus of sermon transcripts and, for a given theme, tells us which transcripts engage that theme, how directly, and exactly which passages carry it. Everything below is drawn from the code, not from recollection.</p>
+
+        <h3>What happens to one transcript</h3>
+
+        <ol class="body-list">
+          <li><strong>Length estimate.</strong> The transcript's token count is estimated at roughly 3.5 characters per token.</li>
+          <li><strong>Under 20,000 tokens</strong> — one API call analyses the whole transcript in a single pass.</li>
+          <li><strong>Over 20,000 tokens</strong> — the transcript is split into 12,000-token chunks with 800 tokens of overlap. Each chunk is analysed in parallel, and one additional synthesis call merges the partial findings into a single judgement.</li>
+          <li><strong>The model returns strict JSON</strong>: a relevance score from 0 to 100, an explicitness rating (explicit, tangential, or absent), a reasoning paragraph, and a list of passage locations marked by exact verbatim start and end phrases.</li>
+          <li><strong>Those markers are used to cut the real passages out of the source text</strong>, which are assembled into a Word report. The quotes in the final document are the transcript's own words, located by the model but extracted by our code.</li>
+        </ol>
+
+        <h3>What a "run" means</h3>
+
+        <p>A run is one theme applied to the whole corpus. At a 55-minute average, that is 1,800 API calls, roughly 24.9 million input tokens and 1.2 million output tokens. At a 150-minute average the same corpus becomes 7,200 calls and 81.2 million input tokens, because each transcript is split into three chunks plus a synthesis call — and the chunk overlap means some text is paid for twice.</p>
+
+        <div class="callout caution">
+          <span class="tag">Where long transcripts hurt</span>
+          <p>Crossing the 20,000-token threshold turns one API call into four. Long transcripts are disproportionately expensive on <em>any</em> provider — which is precisely why an expensive per-token rate compounds rather than merely adds.</p>
+        </div>
+
+        <h3>The system is already provider-agnostic</h3>
+
+        <p>This is the crux, and it deserves to be a headline rather than a footnote. The pipeline's client is a standard OpenAI-SDK client pointed at a configurable address. Its configuration file already defaults to:</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Current defaults in the pipeline configuration</caption>
+            <thead><tr><th>Setting</th><th>Current default value</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Provider</td><td><code>openrouter</code></td></tr>
+              <tr><td class="name">Endpoint</td><td><code>https://openrouter.ai/api/v1</code></td></tr>
+              <tr><td class="name">Default model</td><td><code>deepseek/deepseek-v4-flash</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>There is no Claude-specific code to remove. There is no migration to fund. Switching between DeepSeek, Gemini, Claude, or anything else is a change of one configuration value, and the same code path serves all of them. This defuses the largest objection a budget-holder normally has to any technology change — <em>what will the switch itself cost us?</em> The answer here is: nothing. It is already done.</p>
+
+        <h3>We can prove parity rather than assert it</h3>
+
+        <p>The repository contains an evaluation harness that runs the same transcript and the same theme across several models simultaneously and prints a side-by-side table of relevance score, token usage, and elapsed time. It also records how many passage locations each model found and whether the transcript was chunked.</p>
+
+        <p>Underneath that, the pipeline enforces a strict output schema with a retry loop. A model that cannot hold the required JSON format fails loudly and visibly rather than degrading quietly. The code already keeps a list of model endpoints that reject formal structured-output requests and falls back to prompted JSON with strict parse-and-retry — direct evidence, from our own system, that format compliance genuinely varies between models and that we already detect it.</p>
+
+        <p>This turns "trust me, DeepSeek is good enough" into "here is the comparison table, run on our own transcripts." It is the most credible thing in this document, and it is the reason the recommendation ends in a pilot rather than a commitment.</p>
+
+        <h3>Spending controls that already exist</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Fiscal governance built into the pipeline</caption>
+            <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="name">Global concurrency cap</td>
+                <td>Total simultaneous API calls are capped (default 12) regardless of how transcript-level and chunk-level parallelism interleave. A run cannot stampede into rate limits or runaway spend.</td>
+              </tr>
+              <tr>
+                <td class="name">Resumable checkpointing</td>
+                <td>Completed transcripts are recorded as they finish. An interrupted run resumes where it stopped instead of re-paying for work already done.</td>
+              </tr>
+              <tr>
+                <td class="name">Raw-result cache</td>
+                <td>Each run's raw analysis payloads are stored, so the Word and HTML reports can be regenerated later — new formatting, new layout, corrected typos — without paying for the analysis again.</td>
+              </tr>
+              <tr>
+                <td class="name">Per-request timeout</td>
+                <td>A 180-second ceiling per call, so one hung request cannot hold a concurrency slot indefinitely.</td>
+              </tr>
+              <tr>
+                <td class="name"><code>--limit N</code></td>
+                <td>Runs the pipeline over the first N transcripts only. This is what makes a costed pilot possible before committing to the full corpus.</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+
+        <p class="tnote">One clarification, for accuracy: the cache stores results so reports can be rebuilt for free. It does not deduplicate identical API calls within a run. The saving is real but it is the saving on <em>re-reporting</em>, not on re-analysis.</p>
+
+        <p>These are worth reading as fiscal governance rather than as features. Spend is bounded, interruptions are not billed twice, and a pilot can be costed before the full commitment is made.</p>
+      </section>
+
+      <!-- ============ 3. COST ANALYSIS ============ -->
+      <section id="cost">
+        <div class="sect-head">
+          <span class="sect-num">03</span>
+          <h2 class="sect-title">The cost analysis</h2>
+        </div>
+
+        <h3>Methodology</h3>
+
+        <p>A calculator in the repository (<code>tools/cost_model.py</code>) derives token volume from the pipeline's own configuration constants rather than from a guess: the 12,000-token chunk size, the 800-token overlap, the 20,000-token single-pass threshold, the 1,655-token analysis system prompt, the 477-token synthesis prompt, and an 8% allowance for schema and rate-limit retries that re-send the full input. It then prices that volume against a table of provider rates.</p>
+
+        <p>Anyone can re-run it and get the same answer:</p>
+
+        <p class="mono" style="background: var(--surface-sunk); padding: 12px 16px; border-radius: 3px; max-width: none; overflow-x: auto;">python tools/cost_model.py --transcripts 1800 --avg-minutes 55</p>
+
+        <p>That reproducibility is what makes these numbers credible rather than rhetorical. Every assumption is a named constant that can be challenged individually — they are listed in the appendix.</p>
+
+        <h3>Volume per full-corpus run — 1,800 transcripts, one theme</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Modelled estimate &middot; derived from pipeline configuration</caption>
+            <thead>
+              <tr>
+                <th>Average transcript</th>
+                <th class="num">Tokens each</th>
+                <th class="num">API calls</th>
+                <th class="num">Input tokens</th>
+                <th class="num">Output tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">30 min</td><td class="num">~6,100</td><td class="num">1,800</td><td class="num">15.1 M</td><td class="num">1.2 M</td></tr>
+              <tr><td class="name">55 min <span class="mono" style="color:var(--muted)">(central)</span></td><td class="num">~11,100</td><td class="num">1,800</td><td class="num">24.9 M</td><td class="num">1.2 M</td></tr>
+              <tr><td class="name">90 min</td><td class="num">~18,200</td><td class="num">1,800</td><td class="num">38.7 M</td><td class="num">1.2 M</td></tr>
+              <tr class="rule-top"><td class="name">150 min <span class="mono" style="color:var(--muted)">(chunked)</span></td><td class="num">~30,400</td><td class="num">7,200</td><td class="num">81.2 M</td><td class="num">3.9 M</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="tnote">The jump at the last row is the chunking cliff described in section 2. It is a property of the pipeline, not of any provider.</p>
+
+        <h3>Cost per full-corpus run, by model</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>55-minute average &middot; prices verified 27 Aug 2026</caption>
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th class="num">Input $/M</th>
+                <th class="num">Output $/M</th>
+                <th class="num">Cost per run</th>
+                <th class="num">Per transcript</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">Claude Opus 5</td><td class="num">$5.00</td><td class="num">$25.00</td><td class="num costly">$153.88</td><td class="num">$0.0855</td></tr>
+              <tr><td class="name">Claude Sonnet 5</td><td class="num">$2.00</td><td class="num">$10.00</td><td class="num">$61.55</td><td class="num">$0.0342</td></tr>
+              <tr><td class="name">Claude Haiku 4.5</td><td class="num">$1.00</td><td class="num">$5.00</td><td class="num">$30.78</td><td class="num">$0.0171</td></tr>
+              <tr class="rule-top"><td class="name">Gemini 3.6 Flash</td><td class="num">$0.75</td><td class="num">$3.75</td><td class="num">$23.08</td><td class="num">$0.0128</td></tr>
+              <tr><td class="name">Gemini 3.5 Flash Lite</td><td class="num">$0.30</td><td class="num">$2.50</td><td class="num">$10.40</td><td class="num">$0.0058</td></tr>
+              <tr class="highlight"><td class="name">DeepSeek V4 Flash</td><td class="num">$0.0679</td><td class="num">$0.168</td><td class="num good">$1.89</td><td class="num">$0.0010</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tablewrap">
+          <table>
+            <caption>150-minute average &middot; worst case, transcripts chunked</caption>
+            <thead>
+              <tr><th>Model</th><th class="num">Cost per run</th><th class="num">Per transcript</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">Claude Opus 5</td><td class="num costly">$504.16</td><td class="num">$0.2801</td></tr>
+              <tr><td class="name">Claude Sonnet 5</td><td class="num">$201.66</td><td class="num">$0.1120</td></tr>
+              <tr><td class="name">Claude Haiku 4.5</td><td class="num">$100.83</td><td class="num">$0.0560</td></tr>
+              <tr class="rule-top"><td class="name">Gemini 3.6 Flash</td><td class="num">$75.62</td><td class="num">$0.0420</td></tr>
+              <tr><td class="name">Gemini 3.5 Flash Lite</td><td class="num">$34.18</td><td class="num">$0.0190</td></tr>
+              <tr class="highlight"><td class="name">DeepSeek V4 Flash</td><td class="num good">$6.17</td><td class="num">$0.0034</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout caution">
+          <span class="tag">An honest correction to an earlier estimate</span>
+          <p>An earlier version of this analysis used $15 / $75 per million tokens for the frontier tier — the previous Opus generation's price. Claude Opus 5 is <strong>$5 / $25</strong>. The frontier tier is now roughly a third of what it was, and the absolute cost of running on it is far less alarming than the earlier figures suggested. We are stating this plainly because the case does not depend on the frightening number. It depends on the ratio, which has actually <em>widened</em>: the cheap tier fell further and faster than the expensive one.</p>
+        </div>
+
+        <h3>The multipliers</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Cost ratio on one full-corpus run, 55-minute average</caption>
+            <thead><tr><th>Comparison</th><th class="num">Ratio</th><th>What it means in practice</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Claude Opus 5 &rarr; DeepSeek V4 Flash</td><td class="num">81&times;</td><td>The Opus budget for one theme funds 81 themes on the proposed default.</td></tr>
+              <tr><td class="name">Claude Sonnet 5 &rarr; DeepSeek V4 Flash</td><td class="num">33&times;</td><td>Even the mid tier costs 33 times the low-cost default.</td></tr>
+              <tr><td class="name">Claude Opus 5 &rarr; Gemini 3.5 Flash Lite</td><td class="num">15&times;</td><td>The Western-hosted alternative, if data residency is the deciding concern.</td></tr>
+              <tr><td class="name">Claude Opus 5 &rarr; Gemini 3.6 Flash</td><td class="num">6.7&times;</td><td>The most capable of the low-cost options; still under a seventh of the price.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Scenario modelling</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Full programme costs &middot; 55-minute average &middot; modelled estimate</caption>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th class="num">Opus 5</th>
+                <th class="num">Sonnet 5</th>
+                <th class="num">Gemini 3.5 Flash Lite</th>
+                <th class="num">DeepSeek V4 Flash</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">1 theme &times; 1,800 transcripts</td><td class="num costly">$153.88</td><td class="num">$61.55</td><td class="num">$10.40</td><td class="num good">$1.89</td></tr>
+              <tr><td class="name">10 themes &times; 1,800 transcripts</td><td class="num costly">$1,538.82</td><td class="num">$615.53</td><td class="num">$103.99</td><td class="num good">$18.90</td></tr>
+              <tr><td class="name">10 themes + 3 full re-runs (13 passes)</td><td class="num costly">$2,000.47</td><td class="num">$800.19</td><td class="num">$135.19</td><td class="num good">$24.57</td></tr>
+              <tr class="highlight rule-top">
+                <td class="name">Hybrid: DeepSeek across all 1,800, plus Claude Sonnet 5 re-scoring the top 150 — per theme</td>
+                <td class="num" colspan="4" style="text-align:right">$7.02 &nbsp; <span style="color:var(--muted); font-weight:400">($1.89 bulk + $5.13 QA)</span></td>
+              </tr>
+              <tr class="highlight"><td class="name">Hybrid &times; 10 themes</td><td class="num" colspan="4" style="text-align:right">$70.20</td></tr>
+              <tr class="highlight"><td class="name">Hybrid &times; 13 passes</td><td class="num" colspan="4" style="text-align:right">$91.26</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The hybrid line is the recommendation, and it is worth pausing on. A full ten-theme research programme with frontier-grade Claude quality assurance on every transcript destined for publication costs <strong>$70</strong> — about <strong>4.6% of the Opus-everything bill</strong>, and 11% of the Sonnet-everything bill. Section 7 explains why that is not a compromise.</p>
+
+        <h3>Prompt caching: a smaller saving than it sounds</h3>
+
+        <p>Our analysis system prompt is 1,655 tokens and identical on every call, so it is a natural candidate for prompt caching, which bills repeated prefixes at a fraction of the normal input rate. Both Anthropic and the OpenRouter models support it — Claude at 10% of the input rate on a cache hit, DeepSeek V4 Flash at $0.0168 per million against $0.0679 standard.</p>
+
+        <p>The honest arithmetic: the system prompt is about 12% of the input tokens on a 55-minute transcript. The transcript body — the other 88% — is unique to each call and cannot be cached. Caching the prompt therefore saves roughly <strong>8–9% of a run's total cost</strong>, on any of these models. That is real and worth implementing, but it is a rounding adjustment, not a lever. It does not change any decision in this document. We list it as an implementation to-do, not as a saving to bank in advance.</p>
+
+        <h3>What OpenRouter itself costs</h3>
+
+        <p>OpenRouter states that it passes through provider pricing without markup on inference. We verified this directly: Claude Opus 5 lists on OpenRouter at $5 and $25 per million tokens — identical to Anthropic's own published rates. There is no hidden margin on tokens.</p>
+
+        <p>OpenRouter monetises instead through a <strong>credit purchase fee of 5.5% (minimum $0.80) on card payments</strong>, and a 5% fee on very high-volume bring-your-own-key usage that does not apply to us. In practice: a $100 approval buys about <strong>$94.50 of usable credit</strong>. We are naming this because a reader should not discover it on a receipt.</p>
+      </section>
+
+      <!-- ============ 4. WHY THE GAP EXISTS ============ -->
+      <section id="gap">
+        <div class="sect-head">
+          <span class="sect-num">04</span>
+          <h2 class="sect-title">Why the price gap exists</h2>
+        </div>
+
+        <p>The natural reaction to an 81× price difference is suspicion. If one thing costs 81 times another, surely it is 81 times better, and surely we are about to buy something inferior. That instinct is sound in most markets. It is misleading in this one, and the reason is worth understanding properly.</p>
+
+        <h3>Capability varies at the frontier. Our task does not live at the frontier.</h3>
+
+        <p>Models are not equally intelligent. The differences between a frontier model and a mid-tier one are real and, on the right task, dramatic: novel reasoning, long-horizon planning, holding a complex problem in mind across many steps, original synthesis. If we were asking a model to write original theology, or to design a research methodology from scratch, the frontier tier would be worth every cent.</p>
+
+        <p>That is not what we are asking. Our pipeline asks a model to do one bounded, well-specified thing, over and over:</p>
+
+        <ul>
+          <li>Read a segment of text.</li>
+          <li>Judge how relevant it is to a named theme, and how directly.</li>
+          <li>Emit strictly-formatted JSON containing that judgement, a short justification, and the verbatim phrases that begin and end each relevant passage.</li>
+        </ul>
+
+        <p>This is squarely inside what the entire current generation of mid-tier models does reliably. It is careful reading and structured reporting — a commodity operation, performed 1,800 times. At frontier prices, we are paying a specialist's consulting rate for careful transcription.</p>
+
+        <h3>The capability gap narrowed while the price gap widened</h3>
+
+        <p>On structured extraction specifically — read this, judge it, report it in this exact shape — the distance between the best model available and the tenth-best has compressed to near-irrelevance, while the price distance has grown. That divergence is the entire opportunity. It is not that the expensive model is bad value in general; it is that it is bad value <em>for this particular job</em>.</p>
+
+        <p>We are deliberately not quoting benchmark scores here. Published benchmarks measure general capability on tasks that are not ours, and citing them would be borrowing authority we have not earned. The argument does not need benchmarks. It needs the pilot, which measures the only thing that matters: how these models perform on <em>our</em> transcripts, against <em>our</em> themes, in <em>our</em> output format.</p>
+
+        <h3>The schema is the real quality floor</h3>
+
+        <p>The pipeline does not trust any model on faith. Every response must validate against a strict schema — score, explicitness rating, reasoning, and location markers with exact verbatim boundaries. A response that does not validate is retried; a model that repeatedly cannot comply fails visibly and gets disqualified. And because the passage markers must be exact verbatim text found in the source, a model that fabricates a quotation produces a marker our extraction code cannot locate. The failure surfaces rather than slipping through into a report.</p>
+
+        <p>This architecture is what makes a cheap default safe. The risk of a bad model choice is not silent degradation in a published document; it is a noisy failure at pilot stage that costs a few dollars to discover.</p>
+
+        <h3>Choosing OpenRouter is not choosing against Claude</h3>
+
+        <p>Where a task genuinely does need frontier capability, OpenRouter serves Claude Opus 5 on the same key, through the same code path, at the same published price — one configuration line away. Nothing about this proposal reduces our access to Claude, or makes returning to it harder. It makes returning to it a one-line decision instead of a procurement decision.</p>
+      </section>
+
+      <!-- ============ 5. LAYERS ============ -->
+      <section id="layers">
+        <div class="sect-head">
+          <span class="sect-num">05</span>
+          <h2 class="sect-title">Subscription, API, and our own asset</h2>
+        </div>
+
+        <p>Three different things tend to get conflated under the single word "Claude." Separating them clarifies what we are actually buying, what we already own, and — most importantly — why the thing we already pay for cannot be pointed at this problem.</p>
+
+        <div class="stack">
+          <div class="layer">
+            <span class="who">Sold per token</span>
+            <p><span class="what">The model</span>The raw capability — reading, judging, writing. Priced per million tokens. This is what an API purchase buys, and it is the layer where the 81× applies.</p>
+          </div>
+          <div class="layer">
+            <span class="who">Sold per seat, per month</span>
+            <p><span class="what">The product wrapper</span>The Claude chat interface, Projects, file uploads, the desktop and mobile apps. Genuinely excellent, and priced for people rather than for volume. <strong>This is what our subscription buys — and it is a different purchase from the layer above it.</strong> A subscription does not include, and cannot be converted into, access to the model layer for our own software.</p>
+          </div>
+          <div class="layer ours">
+            <span class="who">Built by us · owned by us</span>
+            <p><span class="what">Our own infrastructure</span>The chunker, the concurrency gate, the retry-and-schema layer, the checkpointing, the passage extraction, the aggregation, the Word report generator. This is the asset that actually produces the deliverable — and it is provider-neutral by design.</p>
+          </div>
+        </div>
+
+        <h3>The subscription we already pay for cannot buy this work</h3>
+
+        <p>This is the point most likely to be misunderstood, and it is worth stating without hedging. <strong>A Claude subscription and Claude API access are two separate products, bought separately, billed separately, on separate accounts.</strong> Paying for one does not give you any amount of the other.</p>
+
+        <p>Anthropic states this plainly in its own support documentation:</p>
+
+        <blockquote class="pull">
+          <p>"Claude paid plans give subscribers access to Claude on the web, desktop, and mobile… The Claude Console is our developer platform providing API keys and access to Claude models for building applications and integrations. <strong>A paid Claude subscription enhances your chat experience but doesn't include access to the Claude API or Console.</strong>"</p>
+          <cite>Anthropic Help Center, "I have a paid Claude subscription — why do I have to pay separately to use the Claude API and Console?"</cite>
+        </blockquote>
+
+        <p>The practical consequence for us: our subscription cannot issue an API key. Our pipeline cannot log in with it. There is no setting, no upgrade, and no support request that converts subscription usage into the programmatic access this system needs. The two purchases go through different doors.</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Two separate purchases, not two tiers of one purchase</caption>
+            <thead>
+              <tr><th>&nbsp;</th><th>Claude subscription (Pro / Max / Team)</th><th>Claude API (Console)</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">What you buy</td><td>A seat for a person</td><td>Tokens for a machine</td></tr>
+              <tr><td class="name">Priced by</td><td>Person, per month</td><td>Token, per use</td></tr>
+              <tr><td class="name">Where it works</td><td>Claude on web, desktop and mobile</td><td>Any application you write</td></tr>
+              <tr><td class="name">Gives you an API key</td><td class="costly">No</td><td class="good">Yes — that is what it is</td></tr>
+              <tr><td class="name">Can run our pipeline</td><td class="costly">No — not at any subscription tier</td><td class="good">Yes</td></tr>
+              <tr><td class="name">Account &amp; invoice</td><td>Separate signup, separate invoice</td><td>Separate signup, separate invoice</td></tr>
+              <tr><td class="name">Unused capacity</td><td>Expires monthly</td><td>Prepaid credit; does not expire monthly</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>The one exception, stated honestly</h4>
+
+        <p>There is a narrow case that a well-informed colleague may raise, and we would rather raise it ourselves. Anthropic does let a Pro or Max subscriber use their plan for some <em>developer</em> tools — Claude Code, and projects built on the Claude Agent SDK — through a per-user monthly credit ($20 on Pro, $100 or $200 on the Max tiers). So it is not strictly true that a subscription buys nothing programmatic.</p>
+
+        <p>It does not, however, help us, for three independent reasons:</p>
+
+        <ul>
+          <li><strong>Wrong architecture.</strong> That credit applies to Anthropic's own Agent SDK. Our pipeline is a plain OpenAI-compatible HTTP client — deliberately, because that is what makes it provider-neutral. It cannot draw on that credit at all without being rewritten around a single vendor's framework, which is the opposite of what this proposal recommends.</li>
+          <li><strong>Wrong billing unit.</strong> The credit is per user, and Anthropic states it "can't be pooled, transferred, or shared across the organization." A corpus run is organisational work, not one person's work.</li>
+          <li><strong>Explicitly not for this.</strong> Anthropic's own guidance is that "teams running shared production automation should use Claude Platform with an API key for predictable pay-as-you-go billing." We agree with them. That is precisely what this proposal asks for — an API key with pay-as-you-go billing, purchased through OpenRouter so it is not tied to one vendor.</li>
+        </ul>
+
+        <div class="callout">
+          <span class="tag">What this settles</span>
+          <p>"We already pay for Claude, so this is duplicate spend" is the objection this section exists to answer, and the answer is that <strong>the two payments cannot substitute for each other in either direction</strong>. The subscription cannot run the pipeline. API credits cannot give the team a chat interface. Declining this request does not save money by falling back on the subscription — it means the corpus does not get analysed at all.</p>
+        </div>
+
+        <h3>Why the interface could not do this job even if it were free</h3>
+
+        <p>Set billing aside entirely and the chat interface still cannot do this work. It is superb at what it is for: one person, one conversation, a handful of documents. It is structurally the wrong tool for 1,800 transcripts, and not because of any deficiency in Claude:</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Why the chat interface cannot do this job</caption>
+            <thead><tr><th>Requirement</th><th>Chat interface</th><th>Our pipeline</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Processing 1,800 items</td><td>A person must be present for every unit of work</td><td>Runs unattended, 12 calls in flight</td></tr>
+              <tr><td class="name">Long transcripts</td><td>Upload limits force manual splitting — a person becomes the chunker</td><td>Automatic chunking with overlap and synthesis</td></tr>
+              <tr><td class="name">Interruption</td><td>A lost session is lost work</td><td>Checkpointed; resumes without re-paying</td></tr>
+              <tr><td class="name">Output</td><td>Prose in a chat window</td><td>Validated JSON flowing into a report builder</td></tr>
+              <tr><td class="name">Costing a piece of work</td><td>You can cost a subscription, not a run</td><td>Per-run token telemetry; cost per transcript</td></tr>
+              <tr><td class="name">Reproducibility</td><td>Cannot re-run last quarter's analysis and get the same answer</td><td>Same inputs, same configuration, same result — and the passage markers show a reviewer exactly how each quote was selected</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <span class="tag">The distinction that matters</span>
+          <p><strong>A subscription seat scales with people. An API key scales with work.</strong> Our bottleneck is work, not people. Both purchases are legitimate; they are simply answers to different questions, and only one of them can process a corpus.</p>
+        </div>
+      </section>
+
+      <!-- ============ 6. PLATFORM ============ -->
+      <section id="platform">
+        <div class="sect-head">
+          <span class="sect-num">06</span>
+          <h2 class="sect-title">One key, many applications</h2>
+        </div>
+
+        <p>Everything so far has argued about the price of one job. This section argues something larger, and it is the part of the decision with the longest reach: <strong>what we are actually acquiring is not cheaper transcript analysis. It is the ability to build.</strong></p>
+
+        <h3>The interface we admire is itself an application</h3>
+
+        <p>It is worth saying out loud what the Claude chat interface actually is. It is a very good <em>application</em> that Anthropic built on top of a model. The conversation window, the memory of what you said earlier, the file uploads, the projects — none of that is the model. It is software wrapped around a model, designed for a general audience of individual users.</p>
+
+        <p>Once we hold an API key, we can do the same thing. Not build a competitor to Claude — build the version of it that fits <em>Gospel Light House specifically</em>: that knows our archive, speaks to our congregation, follows our workflows, and lives inside the tools our staff already use. The engine is the same class of engine. The difference is that the application around it is ours, shaped to our situation rather than to the average of everyone's.</p>
+
+        <p>That is the shift this key represents, and it is a shift in position rather than in price: <strong>from being a tenant in someone else's product to being the owner of our own.</strong></p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 960 470" role="img" aria-label="Two architectures compared. Today, Gospel Light House staff use Anthropic's chat application, and the ownership boundary sits directly beneath that application, so nothing below it is ours. With an OpenRouter key, the boundary drops to just beneath our own applications: the transcript pipeline, an archive chatbot, media tooling and anything built later all sit above it, calling one endpoint that routes to DeepSeek, Gemini, Claude, or any future model.">
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="dg-head" />
+              </marker>
+              <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" class="dg-head-acc" />
+              </marker>
+            </defs>
+
+            <!-- ============ LEFT: today ============ -->
+            <rect class="dg-panel" x="10" y="10" width="430" height="440" rx="2" />
+            <text class="dg-hd" x="30" y="34">TODAY &#183; WE ARE A TENANT</text>
+
+            <rect class="dg-box" x="75" y="52" width="300" height="44" rx="2" />
+            <text class="dg-t dg-t-b" x="225" y="79" text-anchor="middle">Our staff &amp; members</text>
+
+            <line class="dg-arrow" x1="225" y1="96" x2="225" y2="138" marker-end="url(#ah)" />
+            <text class="dg-lbl" x="233" y="122">TYPE INTO</text>
+
+            <line class="dg-closed" x1="26" y1="119" x2="424" y2="119" />
+            <text class="dg-lbl dg-lbl-closed" x="30" y="113">CLOSED TO US BELOW THIS LINE</text>
+
+            <rect class="dg-box" x="75" y="142" width="300" height="56" rx="2" />
+            <text class="dg-t dg-t-b" x="225" y="167" text-anchor="middle">Claude chat interface</text>
+            <text class="dg-t-s" x="225" y="185" text-anchor="middle">an application Anthropic built</text>
+
+            <line class="dg-arrow" x1="225" y1="198" x2="225" y2="240" marker-end="url(#ah)" />
+            <text class="dg-lbl" x="233" y="224">RUNS ON</text>
+
+            <rect class="dg-box" x="75" y="244" width="300" height="48" rx="2" />
+            <text class="dg-t dg-t-b" x="225" y="273" text-anchor="middle">Claude models</text>
+
+            <text class="dg-t-s" x="225" y="330" text-anchor="middle">We can build nothing here.</text>
+            <text class="dg-t-s" x="225" y="350" text-anchor="middle">One vendor, one interface,</text>
+            <text class="dg-t-s" x="225" y="370" text-anchor="middle">one shape of work.</text>
+
+            <!-- boundary-moves connector -->
+            <path class="dg-arrow-acc" style="stroke-dasharray: 5 4" d="M 440 119 C 482 119, 478 231, 514 231" marker-end="url(#aha)" />
+
+            <!-- ============ RIGHT: with a key ============ -->
+            <rect class="dg-panel" x="520" y="10" width="430" height="440" rx="2" />
+            <text class="dg-hd" x="540" y="34">WITH OUR OWN KEY &#183; WE ARE THE OWNER</text>
+
+            <rect class="dg-box" x="545" y="52" width="380" height="44" rx="2" />
+            <text class="dg-t dg-t-b" x="735" y="79" text-anchor="middle">Members &#183; staff &#183; researchers &#183; media team</text>
+
+            <rect class="dg-box-acc" x="532" y="126" width="97" height="58" rx="2" />
+            <text class="dg-t-s" x="580" y="150" text-anchor="middle">Transcript</text>
+            <text class="dg-t-s" x="580" y="165" text-anchor="middle">pipeline</text>
+
+            <rect class="dg-box-acc" x="635" y="126" width="97" height="58" rx="2" />
+            <text class="dg-t-s" x="683" y="150" text-anchor="middle">Archive</text>
+            <text class="dg-t-s" x="683" y="165" text-anchor="middle">chatbot</text>
+
+            <rect class="dg-box-acc" x="738" y="126" width="97" height="58" rx="2" />
+            <text class="dg-t-s" x="786" y="150" text-anchor="middle">Media</text>
+            <text class="dg-t-s" x="786" y="165" text-anchor="middle">tooling</text>
+
+            <rect class="dg-box-acc" x="841" y="126" width="97" height="58" rx="2" />
+            <text class="dg-t-s" x="889" y="150" text-anchor="middle">+ anything</text>
+            <text class="dg-t-s" x="889" y="165" text-anchor="middle">built later</text>
+
+            <text class="dg-lbl dg-lbl-open" x="540" y="119">APPLICATIONS WE OWN</text>
+
+            <line class="dg-arrow" x1="735" y1="184" x2="735" y2="252" marker-end="url(#ah)" />
+            <text class="dg-lbl" x="743" y="216">CALL</text>
+
+            <line class="dg-open" x1="536" y1="231" x2="934" y2="231" />
+            <text class="dg-lbl dg-lbl-open" x="540" y="248">OURS ABOVE THIS LINE</text>
+
+            <rect class="dg-box" x="545" y="256" width="380" height="52" rx="2" />
+            <text class="dg-t dg-t-b" x="735" y="279" text-anchor="middle">OpenRouter</text>
+            <text class="dg-t-s" x="735" y="297" text-anchor="middle">one key &#183; one balance &#183; one endpoint</text>
+
+            <line class="dg-arrow" x1="735" y1="308" x2="586" y2="344" marker-end="url(#ah)" />
+            <line class="dg-arrow" x1="735" y1="308" x2="686" y2="344" marker-end="url(#ah)" />
+            <line class="dg-arrow" x1="735" y1="308" x2="784" y2="344" marker-end="url(#ah)" />
+            <line class="dg-arrow" x1="735" y1="308" x2="884" y2="344" marker-end="url(#ah)" />
+            <text class="dg-lbl" x="540" y="332">ROUTES TO</text>
+
+            <rect class="dg-box" x="532" y="348" width="97" height="44" rx="2" />
+            <text class="dg-t-s" x="580" y="375" text-anchor="middle">DeepSeek</text>
+
+            <rect class="dg-box" x="635" y="348" width="97" height="44" rx="2" />
+            <text class="dg-t-s" x="683" y="375" text-anchor="middle">Gemini</text>
+
+            <rect class="dg-box" x="738" y="348" width="97" height="44" rx="2" />
+            <text class="dg-t-s" x="786" y="375" text-anchor="middle">Claude</text>
+
+            <rect class="dg-box" x="841" y="348" width="97" height="44" rx="2" />
+            <text class="dg-t-s" x="889" y="375" text-anchor="middle">next year's</text>
+
+            <text class="dg-t-s" x="735" y="424" text-anchor="middle">Swapping any engine is one config line. Adding an application costs no new contract.</text>
+          </svg>
+          <figcaption><b>The same engines. A different boundary.</b> Today the line sits directly beneath Anthropic's application, so the only thing we can do is reach across it and type. With our own key the line drops to beneath <em>our</em> applications — the transcript pipeline is simply the first of them — and everything above it is ours to design, change, and own. The dashed arrow is the whole proposal: the boundary moves down.</figcaption>
+        </figure>
+
+        <h3>What could actually be built</h3>
+
+        <p>These are not hypotheticals from a vendor brochure. Every item below runs on the same key, the same prepaid balance, and the same endpoint the transcript pipeline already uses — no new procurement, no new vendor, no new approval cycle. They are ordered roughly by how close they are to what we have already built.</p>
+
+        <div class="appgroup">
+          <h4>The archive as a research corpus</h4>
+          <div class="appgrid">
+            <div class="appcard built">
+              <span class="nm">Theme extraction pipeline</span>
+              <p>Scores every transcript against a theme and pulls the exact passages into a Word report. Built, tested, and waiting on a model decision.</p>
+              <span class="serves">Built &#183; research team</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Semantic search across every sermon</span>
+              <p>Ask "where has the archive dealt with grief in the Psalms?" and get the passages themselves, ranked — not filename matches, not a keyword that happens to appear. Uses embedding models available on the same endpoint.</p>
+              <span class="serves">Research team &#183; preaching staff</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Scripture citation index</span>
+              <p>Automatically map every passage of Scripture referenced across all 1,800 sermons, including paraphrases and allusions the text never cites by chapter and verse. Then: "show me everything ever preached on Romans 8."</p>
+              <span class="serves">Preaching staff &#183; archivists</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Longitudinal teaching analysis</span>
+              <p>Track how emphasis on a doctrine or a pastoral concern has changed across years of teaching — the kind of question the corpus can answer but no human has time to ask by hand.</p>
+              <span class="serves">Leadership &#183; research team</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="appgroup">
+          <h4>Serving the congregation directly</h4>
+          <div class="appgrid">
+            <div class="appcard">
+              <span class="nm">Archive question-and-answer assistant</span>
+              <p>A chatbot that answers from our own teaching and cites back to the specific sermon and moment it drew from. Structurally what the Claude interface does — but grounded in <em>our</em> archive and accountable to it, rather than answering from general knowledge.</p>
+              <span class="serves">Members &#183; public</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Personalised study plans</span>
+              <p>A member names a topic or a season they are in; the system assembles a multi-week plan of sermons, passages, and reflection questions drawn from material we have already produced.</p>
+              <span class="serves">Members &#183; small groups</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Small-group discussion guides</span>
+              <p>Generate a leader's guide from any sermon — summary, discussion questions, relevant passages — as a first draft for a staff member to edit rather than a blank page.</p>
+              <span class="serves">Group leaders</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">New-member orientation assistant</span>
+              <p>Answers the practical questions people are often reluctant to ask a person: what happens in a service, what the church believes about a given matter, how to get involved.</p>
+              <span class="serves">Newcomers</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="appgroup">
+          <h4>Media, publishing, and the weekly cycle</h4>
+          <div class="appgrid">
+            <div class="appcard">
+              <span class="nm">Automatic show notes and summaries</span>
+              <p>Every recording gets a summary, key points, and passages referenced, generated the moment the transcript exists — work that currently either takes staff hours or does not happen.</p>
+              <span class="serves">Media team</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Titles, descriptions, and chapter markers</span>
+              <p>Draft metadata for YouTube and podcast platforms, including timestamps for each movement of the message. Improves discoverability of material that already exists.</p>
+              <span class="serves">Media team</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Clip selection for social</span>
+              <p>Identify the two or three most self-contained, quotable 60-second segments in a message, with exact start and end points — the same verbatim-boundary technique the transcript pipeline already uses to cut passages.</p>
+              <span class="serves">Media team &#183; communications</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Devotional and article drafts</span>
+              <p>Turn one sermon into a five-day devotional or a written article as an editable draft. The theology is already ours; the labour is the reformatting.</p>
+              <span class="serves">Communications &#183; editors</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="appgroup">
+          <h4>Translation and accessibility</h4>
+          <div class="appgrid">
+            <div class="appcard">
+              <span class="nm">Subtitles and translation</span>
+              <p>Generate subtitles and translate them into the languages our congregation actually speaks, at a cost per sermon measured in fractions of a cent. This is the item with the widest reach per pound spent.</p>
+              <span class="serves">Non-English speakers &#183; diaspora</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Plain-language versions</span>
+              <p>Produce simpler renderings of dense teaching for younger readers, new believers, or anyone reading in a second language — without diluting what was said.</p>
+              <span class="serves">Youth &#183; new believers</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Low-bandwidth text digests</span>
+              <p>Condensed text versions of messages for members who cannot reliably stream an hour of video, distributed by whatever channel actually reaches them.</p>
+              <span class="serves">Remote &#183; low-connectivity members</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="appgroup">
+          <h4>Internal operations</h4>
+          <div class="appgrid">
+            <div class="appcard">
+              <span class="nm">Drafting assistance inside our own tools</span>
+              <p>Announcement drafts, follow-up notes, and correspondence generated where staff already work — in the CRM and admin systems — rather than in a separate chat window they must copy out of.</p>
+              <span class="serves">Administrative staff</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Meeting minutes and action extraction</span>
+              <p>Turn a recorded meeting into minutes with decisions and owners identified. The same transcript machinery, pointed at a different kind of recording.</p>
+              <span class="serves">Leadership &#183; committees</span>
+            </div>
+            <div class="appcard">
+              <span class="nm">Report and proposal drafting</span>
+              <p>Assemble first drafts of activity reports and funding applications from material the organisation already holds, for a person to verify and finish.</p>
+              <span class="serves">Leadership &#183; fundraising</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>Different jobs want different engines — which is the argument for a router</h3>
+
+        <p>Notice something about that list: no single model is the right choice for all of it. A member-facing chatbot needs speed and a low cost per turn because it answers thousands of short questions. Adjudicating a research finding needs the strongest judgement available and runs a few hundred times. Semantic search does not need a chat model at all — it needs an embedding model, a different category of thing entirely.</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>The same key, matched to the job</caption>
+            <thead>
+              <tr><th>Job</th><th>What it actually needs</th><th>Sensible engine</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">Bulk corpus analysis</td><td>Very low cost per call at high volume; reliable JSON</td><td>DeepSeek V4 Flash</td></tr>
+              <tr><td class="name">Quality adjudication</td><td>Strongest available judgement, low volume</td><td>Claude Sonnet 5 or Opus 5</td></tr>
+              <tr><td class="name">Member-facing chatbot</td><td>Fast response, cheap per turn, long context</td><td>A Gemini Flash tier</td></tr>
+              <tr><td class="name">Semantic search</td><td>An embedding model — not a chat model</td><td>A dedicated embedding model</td></tr>
+              <tr><td class="name">Translation</td><td>Genuine strength in the target languages</td><td>Whichever model is strongest in those languages</td></tr>
+              <tr><td class="name">Staff drafting</td><td>Best writing quality; low volume, high visibility</td><td>Claude</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <span class="tag">Why this settles the vendor question</span>
+          <p>No single vendor is the best answer to all six rows, and committing to one means accepting their weakest row as our ceiling. On a router we never have to choose: each application picks the engine that suits it, on the same key and the same balance, and changes its mind later for the cost of one configuration line. <strong>The router is not a cheaper way to buy one model. It is the thing that lets each job have the right one.</strong></p>
+        </div>
+
+        <h3>The governance case</h3>
+
+        <p>This matters more to finance than to engineers. One vendor relationship. One prepaid balance. One dashboard showing spend by application. The alternative — a separate subscription per tool per team — is both more expensive and considerably harder to audit, because each subscription is a fixed monthly charge disconnected from any unit of work.</p>
+
+        <div class="callout">
+          <span class="tag">For the budget-holder</span>
+          <p>Prepaid credits mean spend <strong>cannot exceed what was deliberately loaded</strong>. If we load $100, the maximum possible exposure is $100. There is no surprise invoice, no overage, and no auto-renewing commitment. Approving a balance is approving a ceiling, not opening a tap.</p>
+        </div>
+
+        <h3>What this key does not do</h3>
+
+        <p>This section has made an expansive claim, so it should end with three honest limits. Naming them is not a retreat from the argument; it is what keeps the argument worth trusting.</p>
+
+        <div class="tablewrap">
+          <table class="qa">
+            <caption>Limits on the "many applications" case</caption>
+            <thead><tr><th>The limit</th><th>What it means for us</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>The key removes procurement friction, not build effort.</td>
+                <td>Every item in the catalogue is a real project needing design, testing, and someone to maintain it afterwards. What the key changes is that none of them requires a new vendor, a new contract, a new invoice, or a new approval — so the question becomes "is this worth building?" rather than "can we get permission to try?" That is a genuine change, but it is not the same as the applications being free.</td>
+              </tr>
+              <tr>
+                <td>Public sermon content is low-risk. Member data is not.</td>
+                <td>The whole data-sovereignty answer in section 8 rests on these being public sermons — already published, containing nothing personal or confidential. Anything touching member records, pastoral notes, giving history, or safeguarding matters is a different risk category and needs its own decision, its own provider restrictions, and probably its own legal review. <strong>This approval should not be read as covering that</strong>, and we are saying so deliberately rather than letting the scope drift later.</td>
+              </tr>
+              <tr>
+                <td>Member-facing tools need a higher bar than internal ones.</td>
+                <td>An assistant answering a member's question about what the church teaches can be confidently wrong, and the cost of that is pastoral, not financial. Anything member-facing needs to cite back to a specific sermon so a person can check it — the same verbatim-passage discipline the transcript pipeline already enforces — and needs human review before launch. The internal and media tools in the catalogue carry no such exposure and could move much sooner.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 7. HYBRID ============ -->
+      <section id="hybrid">
+        <div class="sect-head">
+          <span class="sect-num">07</span>
+          <h2 class="sect-title">Optionality and hybrid tiering</h2>
+        </div>
+
+        <p>The durable argument for this decision is not "DeepSeek is cheapest today." Prices and rankings move every few months, and any document that rests on today's leaderboard is obsolete by Christmas. The durable argument is <strong>optionality</strong>.</p>
+
+        <ul>
+          <li><strong>Hundreds of models behind one endpoint and one key.</strong> Including every Claude model, at Anthropic's own prices.</li>
+          <li><strong>Switching is one configuration value</strong> — proven, because it is how the system is already built.</li>
+          <li><strong>Automatic failover.</strong> If a provider has an outage or rate-limits us, the run can continue on another. A single-provider setup simply stops.</li>
+          <li><strong>Price competition works for us continuously.</strong> When something cheaper or better ships, we adopt it the same week rather than renegotiating a contract.</li>
+          <li><strong>No lock-in.</strong> If Claude becomes the right answer next year, we move back — same key, same code, same afternoon.</li>
+        </ul>
+
+        <h3>The hybrid tiering proposal</h3>
+
+        <p>Here is what we actually recommend running, and it is not a cost-cutting design. It is an allocation design.</p>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Two-tier production configuration &middot; per theme, 55-minute average</caption>
+            <thead>
+              <tr><th>Pass</th><th>Model</th><th class="num">Transcripts</th><th>Purpose</th><th class="num">Cost</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="name">Bulk</td>
+                <td>DeepSeek V4 Flash</td>
+                <td class="num">1,800</td>
+                <td>Score and locate passages across the whole corpus</td>
+                <td class="num">$1.89</td>
+              </tr>
+              <tr>
+                <td class="name">Adjudication</td>
+                <td>Claude Sonnet 5</td>
+                <td class="num">150</td>
+                <td>Independently re-score the highest-relevance transcripts — the ones destined for publication</td>
+                <td class="num">$5.13</td>
+              </tr>
+              <tr class="highlight rule-top">
+                <td class="name">Total</td><td></td><td class="num">—</td>
+                <td>Frontier-grade confidence exactly where a mistake would be visible</td>
+                <td class="num good">$7.02</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Note what the second pass buys. It is not a spot check for reassurance. It is a genuine second opinion from a materially different model on every transcript whose findings will actually be quoted in a report — and where the two passes disagree, that disagreement is itself a signal worth reviewing. We get more scrutiny on the published material than a single-model run at any price would give us, because a single model cannot disagree with itself.</p>
+
+        <div class="callout">
+          <span class="tag">Reframe</span>
+          <p>This is not cutting corners. It is <strong>intelligent allocation</strong>: cheap capacity where the work is bulk and verifiable, expensive capacity where the stakes are visible. Spending $154 to apply frontier reasoning uniformly — including to the 1,650 transcripts that turn out to score near zero — is not rigour. It is undirected spending.</p>
+        </div>
+      </section>
+
+      <!-- ============ 8. RISKS ============ -->
+      <section id="risks">
+        <div class="sect-head">
+          <span class="sect-num">08</span>
+          <h2 class="sect-title">Risks and objections</h2>
+        </div>
+
+        <p>A proposal that hides its trade-offs looks naive. Here are the objections we expect, stated as fairly as we can, with our answers.</p>
+
+        <div class="tablewrap">
+          <table class="qa">
+            <caption>Objections and responses</caption>
+            <thead><tr><th>Objection</th><th>Response</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>"Cheap models will produce worse analysis."</td>
+                <td>Possibly. We do not have to speculate — the evaluation harness measures it on our own transcripts, and the pilot is designed to answer exactly this. Decide on the evidence, not on this document. The hybrid adjudication pass in section 7 is the standing safeguard if the answer is "slightly worse, but only on hard cases."</td>
+              </tr>
+              <tr>
+                <td>"DeepSeek is a Chinese model. What about data sovereignty?"</td>
+                <td>A fair question, and we will not dodge it. Two things. First, the data: these are sermon transcripts — public teaching, already published in audio form. No personal, financial, or pastoral-confidence data passes through the pipeline. Second, the control: OpenRouter publishes each provider's data-retention and training policy, lets an account opt out of routing to providers that train on submitted data, and allows individual requests to be restricted by data policy; enterprise accounts can additionally route through EU or US regional endpoints. If the concern persists after that, <strong>Gemini 3.5 Flash Lite is a Western-hosted alternative at $10.40 per run</strong> — still 15× cheaper than Opus. That this option exists on the same key, for the price of one config line, <em>is</em> the argument for OpenRouter.</td>
+              </tr>
+              <tr>
+                <td>"Another vendor to manage."</td>
+                <td>It replaces per-tool subscriptions with one prepaid account and one dashboard. Fewer relationships, not more — and a spending ceiling instead of a recurring charge.</td>
+              </tr>
+              <tr>
+                <td>"What if OpenRouter goes down, or shuts down?"</td>
+                <td>OpenRouter speaks the standard OpenAI-compatible protocol. Redirecting the pipeline to a provider's own endpoint — Anthropic's, Google's, anyone's — is a change to the endpoint address. The abstraction is the protection. This is the same property that makes the migration free in the first direction.</td>
+              </tr>
+              <tr>
+                <td>"We already pay for Claude. This is duplicate spend."</td>
+                <td>It cannot be duplicate spend, because the two purchases are not interchangeable. A Claude subscription "doesn't include access to the Claude API or Console" — Anthropic's own words. It buys seats on the chat apps; it cannot issue an API key, and no subscription tier can run this pipeline. Declining this request would not save money by falling back on what we already pay for; it would mean the corpus is not analysed. Separately, and even setting billing aside, this is batch machine work a chat interface structurally cannot do — no programmatic loop, no checkpointing, no validated output, no per-run costing. See section 5, which also covers the one narrow developer credit that exists on Pro and Max plans and the three reasons it does not apply here.</td>
+              </tr>
+              <tr>
+                <td>"Exotic models will be unreliable, or rate-limit us."</td>
+                <td>Some will. Schema validation with a retry loop catches malformed output; the global concurrency cap of 12 and per-request 180-second timeout bound the blast radius; checkpointing means a failed run resumes rather than restarts. Failure is visible and resumable rather than silent. What we cannot promise in advance is <strong>latency</strong> — cheaper models are not automatically faster, and a slower model on a rate-limited endpoint could make a full run take materially longer. The pilot measures elapsed time per call, which is precisely why it reports latency alongside cost.</td>
+              </tr>
+              <tr>
+                <td>"JSON compliance varies by model."</td>
+                <td>True — and this, not raw intelligence, is the real selection criterion. Our code already carries a fallback path for model endpoints that reject formal structured-output requests, which is direct evidence that the variation is real. The pilot measures it. Any model that cannot hold the format is disqualified at pilot stage for a few dollars, before it is anywhere near a published report.</td>
+              </tr>
+              <tr>
+                <td>"The savings look too good. What is the catch?"</td>
+                <td>Three, named plainly. <strong>One:</strong> the corpus average is unmeasured, and if transcripts average 150 minutes rather than 55, every figure here roughly triples. <strong>Two:</strong> the 81× is a ratio between two small numbers — the absolute saving on a single run is $152, which is real but not transformative on its own; the case rests on repetition across themes and iterations. <strong>Three:</strong> we have not yet demonstrated quality parity on our own data. That is what the pilot is for, and it is why this document asks for a pilot rather than a decision.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 9. THE ASK ============ -->
+      <section id="ask">
+        <div class="sect-head">
+          <span class="sect-num">09</span>
+          <h2 class="sect-title">The recommendation</h2>
+        </div>
+
+        <div class="asks">
+          <div class="ask">
+            <div>
+              <h3>Approve a $100 prepaid OpenRouter balance</h3>
+              <p>A prepaid ceiling, not a subscription. After the 5.5% card fee this yields about $94.50 of usable credit — enough for the pilot, a full ten-theme first-year programme under the hybrid configuration, and comfortable margin. Nothing auto-renews; nothing can be spent that was not loaded.</p>
+              <span class="price">$100 &middot; one-off &middot; ceiling equals exposure</span>
+            </div>
+          </div>
+          <div class="ask">
+            <div>
+              <h3>Approve a paid pilot on 50 transcripts</h3>
+              <p>Run the model comparison harness plus a 50-transcript sample across DeepSeek V4 Flash, Gemini 3.5 Flash Lite, and Claude Sonnet 5 as the control. Report back cost, latency, schema-compliance rate, and score agreement between models. Measure the true corpus average at the same time.</p>
+              <span class="price">Estimated $3–5 &middot; approximately one week</span>
+            </div>
+          </div>
+          <div class="ask">
+            <div>
+              <h3>On satisfactory results, adopt the two-tier production default</h3>
+              <p>Cheap model across the full corpus; Claude Sonnet 5 re-scoring the top 150 by relevance as adjudication. Review disagreements between the two passes as part of the research workflow, not as an exception.</p>
+              <span class="price">~$7 per theme &middot; ~$70 for a ten-theme programme</span>
+            </div>
+          </div>
+          <div class="ask">
+            <div>
+              <h3>Retain existing Claude access unchanged</h3>
+              <p>This proposal does not touch the subscription. Interactive and exploratory work stays where it is best served. Nothing here is a reduction in what the team can use.</p>
+              <span class="price">No change &middot; no cancellation proposed</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>Pilot plan</h3>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Proposed sequence, approximately one week</caption>
+            <thead><tr><th>Step</th><th>Action</th><th>Output</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Day 1</td><td>Load credit; measure the real corpus — transcript count and true average length</td><td>Re-run of the cost model with verified corpus figures, replacing every estimate in section 3</td></tr>
+              <tr><td class="name">Days 2–3</td><td>Run the comparison harness on a handful of representative transcripts across all candidate models</td><td>Side-by-side scores, token usage, latency; models failing the schema are eliminated here</td></tr>
+              <tr><td class="name">Days 3–4</td><td>Run a 50-transcript sample on the surviving candidates plus Claude Sonnet 5 as control</td><td>Score agreement between tiers; disagreement cases pulled for human reading</td></tr>
+              <tr><td class="name">Day 5</td><td>Human review of the passages each model selected on the disagreement cases</td><td>A judgement on whether the cheap tier's selections are usable</td></tr>
+              <tr><td class="name">Report</td><td>Written recommendation with actual measured cost, latency and agreement rates</td><td>A go / no-go on the production default, decided on evidence</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout caution">
+          <span class="tag">One conditional caveat on the figure</span>
+          <p>If the corpus turns out to average around 150 minutes rather than 55, the hybrid programme costs approximately <strong>$230 for ten themes</strong> rather than $70, and $100 would fund roughly four themes instead of ten. We would come back with a revised figure rather than quietly overspend — but the honest position today is that <strong>$100 is sized against an unverified assumption</strong>, and step one of the pilot exists to replace it.</p>
+        </div>
+      </section>
+
+      <!-- ============ 10. APPENDIX ============ -->
+      <section id="appendix">
+        <div class="sect-head">
+          <span class="sect-num">10</span>
+          <h2 class="sect-title">Appendix: sources &amp; assumptions</h2>
+        </div>
+
+        <h4>A. Model reference</h4>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Verified 27 August 2026</caption>
+            <thead>
+              <tr><th>Model</th><th>Identifier</th><th class="num">Input $/M</th><th class="num">Output $/M</th><th class="num">Cache read $/M</th><th class="num">Context</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="name">Claude Opus 5</td><td><code>anthropic/claude-opus-5</code></td><td class="num">$5.00</td><td class="num">$25.00</td><td class="num">$0.50</td><td class="num">1M</td></tr>
+              <tr><td class="name">Claude Sonnet 5</td><td><code>anthropic/claude-sonnet-5</code></td><td class="num">$2.00</td><td class="num">$10.00</td><td class="num">$0.20</td><td class="num">1M</td></tr>
+              <tr><td class="name">Claude Haiku 4.5</td><td><code>anthropic/claude-haiku-4.5</code></td><td class="num">$1.00</td><td class="num">$5.00</td><td class="num">$0.10</td><td class="num">200K</td></tr>
+              <tr><td class="name">Gemini 3.6 Flash</td><td><code>google/gemini-3.6-flash</code></td><td class="num">$0.75</td><td class="num">$3.75</td><td class="num">$0.075</td><td class="num">1M</td></tr>
+              <tr><td class="name">Gemini 3.5 Flash Lite</td><td><code>google/gemini-3.5-flash-lite</code></td><td class="num">$0.30</td><td class="num">$2.50</td><td class="num">$0.03</td><td class="num">1M</td></tr>
+              <tr><td class="name">DeepSeek V4 Flash</td><td><code>deepseek/deepseek-v4-flash</code></td><td class="num">$0.0679</td><td class="num">$0.168</td><td class="num">$0.0168</td><td class="num">1M</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="tnote"><code>deepseek/deepseek-v4-flash</code> — the identifier already configured as our default — was confirmed to exist and to be currently served. Claude models are listed at Anthropic's own published rates on OpenRouter; there is no pass-through markup.</p>
+
+        <h4>B. Pricing sources</h4>
+
+        <ul>
+          <li><a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a> — all Claude rates, cache multipliers, batch discount. Accessed 27 Aug 2026.</li>
+          <li><a href="https://openrouter.ai/deepseek/deepseek-v4-flash">openrouter.ai/deepseek/deepseek-v4-flash</a> — accessed 27 Aug 2026.</li>
+          <li><a href="https://openrouter.ai/google/gemini-3.6-flash">openrouter.ai/google/gemini-3.6-flash</a> and <a href="https://openrouter.ai/google/gemini-3.5-flash-lite">…/gemini-3.5-flash-lite</a> — accessed 27 Aug 2026.</li>
+          <li><a href="https://openrouter.ai/anthropic/claude-opus-5">openrouter.ai/anthropic/claude-opus-5</a> — pass-through pricing confirmation. Accessed 27 Aug 2026.</li>
+          <li><a href="https://openrouter.ai/docs/faq">openrouter.ai/docs/faq</a> — no inference markup; 5.5% card credit fee. Accessed 27 Aug 2026.</li>
+          <li><a href="https://openrouter.ai/docs/features/privacy-and-logging">openrouter.ai/docs/features/privacy-and-logging</a> — provider data policy controls. Accessed 27 Aug 2026.</li>
+        </ul>
+
+        <h4>B2. Sources on the subscription / API separation (section 5)</h4>
+
+        <ul>
+          <li><a href="https://support.claude.com/en/articles/9876003-i-have-a-paid-claude-subscription-pro-max-team-or-enterprise-plans-why-do-i-have-to-pay-separately-to-use-the-claude-api-and-console">Anthropic Help Centre — "I have a paid Claude subscription (Pro, Max, Team, or Enterprise). Why do I have to pay separately to use the Claude API and Console?"</a> Source of the quoted passage. Accessed 27 Aug 2026.</li>
+          <li><a href="https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan">Anthropic Help Centre — "Use the Claude Agent SDK with your Claude plan."</a> Source for the per-user monthly developer credit, the non-pooling rule, and Anthropic's own recommendation that shared production automation use an API key. Accessed 27 Aug 2026.</li>
+          <li><a href="https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans">Anthropic Help Centre — "Manage usage credits for paid Claude plans."</a> Confirms subscription and usage-credit purchases are billed and invoiced separately. Accessed 27 Aug 2026.</li>
+        </ul>
+
+        <h4>C. Cost model assumptions — each may be challenged individually</h4>
+
+        <div class="tablewrap">
+          <table>
+            <caption>Constants used by <code>tools/cost_model.py</code></caption>
+            <thead><tr><th>Assumption</th><th class="num">Value</th><th>Basis and sensitivity</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Corpus size</td><td class="num">1,800</td><td><strong>Unverified.</strong> Scales every figure linearly.</td></tr>
+              <tr><td class="name">Average transcript length</td><td class="num">55 min</td><td><strong>Unverified — the load-bearing assumption.</strong> 90 min raises costs ~45%; 150 min crosses the chunking threshold and roughly triples them.</td></tr>
+              <tr><td class="name">Speaking rate</td><td class="num">150 wpm</td><td>Normal preaching and teaching cadence.</td></tr>
+              <tr><td class="name">Tokens per word</td><td class="num">1.35</td><td>Standard ratio for conversational English.</td></tr>
+              <tr><td class="name">Characters per token</td><td class="num">3.5</td><td>The pipeline's own heuristic, deliberately conservative — it biases toward smaller chunks so real counts stay under budget.</td></tr>
+              <tr><td class="name">Analysis system prompt</td><td class="num">1,655 tok</td><td>Measured from the prompt file at 3.5 chars/token. Identical on every call.</td></tr>
+              <tr><td class="name">Synthesis system prompt</td><td class="num">477 tok</td><td>Measured. Used only on chunked transcripts.</td></tr>
+              <tr><td class="name">Output tokens per analysis call</td><td class="num">600</td><td><strong>Estimated</strong> from the observed response shape (score, rating, reasoning, several location markers). Should be re-derived from real usage statistics after the pilot.</td></tr>
+              <tr><td class="name">Output tokens per synthesis call</td><td class="num">220</td><td>Estimated, as above.</td></tr>
+              <tr><td class="name">Retry allowance</td><td class="num">8%</td><td>Conservative real-world allowance for schema and rate-limit retries, which re-send the full input. Set to 0 to see the floor.</td></tr>
+              <tr><td class="name">Prompt caching</td><td class="num">not applied</td><td>All figures assume <em>no</em> caching. Implementing it would reduce every figure by roughly 8–9%.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>D. What is measured versus what is estimated</h4>
+
+        <ul>
+          <li><strong>Measured from the code:</strong> chunk size, overlap, single-pass threshold, both system prompt lengths, concurrency caps, retry limits, request timeout, the configured provider and default model.</li>
+          <li><strong>Sourced and dated:</strong> every per-token price, the OpenRouter fee structure, the data-policy controls.</li>
+          <li><strong>Estimated:</strong> corpus size, average transcript length, output tokens per call, retry rate. All four are inputs the pilot will replace with measurements.</li>
+          <li><strong>Not claimed:</strong> any benchmark score, any quantitative statement of relative model quality, any latency figure. We have not measured these and will not assert them.</li>
+        </ul>
+      </section>
+
+      <footer class="colophon">
+        <p>Prepared for Gospel Light House leadership, 27 August 2026. All cost figures are modelled estimates produced by <code>tools/cost_model.py</code> in the project repository and can be reproduced or re-derived under different assumptions by anyone with access to it. Prices were verified on the date shown and change frequently; re-verify before quoting.</p>
+      </footer>
+
+    </main>
+  </div>
+</div>

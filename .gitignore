@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 results/
 .claude/
+# Embedded webfont cache for tools/build_pdf.py -- regenerated on demand.
+tools/.fontcache/

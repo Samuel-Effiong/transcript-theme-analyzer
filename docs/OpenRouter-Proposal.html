@@ -1,0 +1,1634 @@
+<title>The Inference Budget Case</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:      #F7F6F3;
+    --surface:    #FFFFFF;
+    --surface-2:  #F0EEE9;
+    --ink:        #191B1F;
+    --ink-2:      #3D424B;
+    --muted:      #5E636C;
+    --rule:       #E2DFD8;
+    --rule-firm:  #C9C5BB;
+    --accent:     #17719E;
+    --accent-ink: #0F5476;
+    --rust:       #C05621;
+    --rust-ink:   #984317;
+    --band:       #EDF3F7;
+    --shadow:     0 1px 2px rgba(25,27,31,.05), 0 8px 24px -12px rgba(25,27,31,.13);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #15171B;
+      --surface:    #1D2026;
+      --surface-2:  #23272E;
+      --ink:        #E9E7E2;
+      --ink-2:      #C6C7CB;
+      --muted:      #979CA5;
+      --rule:       #2E323A;
+      --rule-firm:  #414652;
+      --accent:     #3D93BE;
+      --accent-ink: #7FBBD9;
+      --rust:       #D07B3C;
+      --rust-ink:   #E3A272;
+      --band:       #1B2830;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #15171B;
+    --surface:    #1D2026;
+    --surface-2:  #23272E;
+    --ink:        #E9E7E2;
+    --ink-2:      #C6C7CB;
+    --muted:      #979CA5;
+    --rule:       #2E323A;
+    --rule-firm:  #414652;
+    --accent:     #3D93BE;
+    --accent-ink: #7FBBD9;
+    --rust:       #D07B3C;
+    --rust-ink:   #E3A272;
+    --band:       #1B2830;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- layout scaffold ---------- */
+  .doc { max-width: 1140px; margin: 0 auto; padding: 0 28px 120px; }
+  .prose { max-width: 68ch; }
+  .wide  { max-width: 100%; }
+
+  section { padding-top: 20px; }
+
+  /* section head: mono number in a rail, title beside it */
+  .shead {
+    display: grid;
+    grid-template-columns: 3.5rem 1fr;
+    gap: 0 18px;
+    align-items: baseline;
+    margin: 76px 0 26px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule-firm);
+  }
+  .shead .num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .78rem; font-weight: 500;
+    letter-spacing: .1em;
+    color: var(--accent);
+    padding-top: .45rem;
+  }
+  .shead h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.45rem, 2.6vw, 1.95rem);
+    line-height: 1.22;
+    letter-spacing: -.012em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .shead .dek {
+    grid-column: 2;
+    color: var(--muted);
+    font-size: .95rem;
+    margin-top: 8px;
+    max-width: 60ch;
+  }
+
+  h3 {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1.02rem; font-weight: 600;
+    letter-spacing: -.005em;
+    margin: 38px 0 10px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 17px; color: var(--ink-2); }
+  .prose > p:first-of-type { margin-top: 0; }
+  strong { color: var(--ink); font-weight: 600; }
+  em { font-style: italic; }
+  a { color: var(--accent-ink); text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px;
+  }
+
+  ul, ol { margin: 0 0 18px; padding-left: 1.15rem; color: var(--ink-2); }
+  li { margin-bottom: 9px; }
+  li::marker { color: var(--muted); }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .855em;
+  }
+  code {
+    background: var(--surface-2);
+    padding: .12em .38em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .70rem; font-weight: 500;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead { padding: 62px 0 8px; border-bottom: 2px solid var(--ink); }
+  .masthead .kicker {
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+    align-items: baseline; margin-bottom: 30px;
+  }
+  .masthead h1 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(2.1rem, 5.4vw, 3.35rem);
+    line-height: 1.06;
+    letter-spacing: -.028em;
+    margin: 0 0 20px;
+    max-width: 20ch;
+    text-wrap: balance;
+  }
+  .masthead .standfirst {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(1.02rem, 1.9vw, 1.2rem);
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 58ch;
+    margin: 0 0 34px;
+  }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 6px 34px;
+    padding: 14px 0 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .745rem;
+    color: var(--muted);
+  }
+  .meta-row b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- headline figure ---------- */
+  .verdict {
+    margin: 44px 0 8px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 30px 32px;
+    box-shadow: var(--shadow);
+  }
+  .verdict .eyebrow { display: block; margin-bottom: 18px; }
+  .figs { display: flex; flex-wrap: wrap; gap: 34px 52px; }
+  .fig { min-width: 150px; }
+  .fig .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: clamp(1.7rem, 3.6vw, 2.35rem);
+    font-weight: 600;
+    letter-spacing: -.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .fig .n.a { color: var(--rust); }
+  .fig .n.b { color: var(--accent); }
+  .fig .l {
+    display: block; margin-top: 9px;
+    font-size: .795rem; line-height: 1.4;
+    color: var(--muted); max-width: 22ch;
+  }
+
+  /* ---------- charts ---------- */
+  .panel {
+    margin: 30px 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 26px 28px 22px;
+    box-shadow: var(--shadow);
+  }
+  .panel-h {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: .95rem; font-weight: 600;
+    margin: 0 0 4px; color: var(--ink);
+  }
+  .panel-sub { font-size: .8rem; color: var(--muted); margin: 0 0 22px; }
+
+  .chart { display: flex; flex-direction: column; gap: 9px; }
+  .row-c {
+    display: grid; grid-template-columns: 190px 1fr; gap: 14px;
+    align-items: center; position: relative;
+    border-radius: 2px;
+  }
+  .row-c:hover, .row-c:focus-within { background: var(--surface-2); }
+  .row-c:hover .bar, .row-c:focus-within .bar { filter: brightness(1.12); }
+  .row-c:hover .nm, .row-c:focus-within .nm { color: var(--ink); }
+  .tip {
+    position: absolute; right: 4px; top: 50%;
+    transform: translateY(-50%);
+    background: var(--ink); color: var(--paper);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem; letter-spacing: .01em;
+    padding: 5px 10px; border-radius: 3px;
+    white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .12s ease;
+    z-index: 4;
+  }
+  .row-c:hover .tip, .row-c:focus-within .tip { opacity: 1; }
+  /* the tip takes the value label's place on hover, so the two never collide
+     on the longest bars, where the label sits far to the right */
+  .row-c:hover .v, .row-c:focus-within .v { opacity: 0; }
+  .v { transition: opacity .12s ease; }
+  @media (hover: none) { .tip { display: none; } .row-c:hover .v { opacity: 1; } }
+  .row-c .nm {
+    font-size: .81rem; color: var(--ink-2);
+    text-align: right; line-height: 1.3;
+  }
+  .track { position: relative; height: 21px; }
+  .bar {
+    height: 21px; border-radius: 0 3px 3px 0;
+    display: flex; align-items: center;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .bar.claude { background: var(--rust); }
+  .bar.alt    { background: var(--accent); }
+  /* The label is a SIBLING of .bar inside .track, not a descendant of it -
+     a `.bar .v` selector silently matches nothing. */
+  .track .v {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .755rem; font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+    /* `top` must be explicit: with only `left` set, the static position puts
+       the label on the line *after* the bar instead of beside it. */
+    position: absolute; top: 0; left: calc(var(--w) + 10px);
+    height: 21px; line-height: 21px;
+    white-space: nowrap;
+  }
+  .axis {
+    position: relative; height: 26px;
+    margin: 6px 0 0 204px;
+    border-top: 1px solid var(--rule);
+  }
+  .axis span {
+    position: absolute; top: 6px;
+    transform: translateX(-50%);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .7rem; color: var(--muted);
+  }
+  .axis span::before {
+    content: ""; position: absolute; top: -7px; left: 50%;
+    width: 1px; height: 5px; background: var(--rule-firm);
+  }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    margin: 20px 0 0; padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-size: .785rem; color: var(--muted);
+  }
+  .legend i {
+    display: inline-block; width: 11px; height: 11px;
+    border-radius: 2px; margin-right: 7px; vertical-align: -1px;
+  }
+  .legend i.claude { background: var(--rust); }
+  .legend i.alt    { background: var(--accent); }
+
+  /* ---------- tables ---------- */
+  .tw { overflow-x: auto; margin: 26px 0; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .845rem; min-width: 560px; }
+  caption {
+    caption-side: top; text-align: left;
+    padding: 18px 20px 14px;
+    font-size: .8rem; color: var(--muted);
+    border-bottom: 1px solid var(--rule);
+  }
+  caption b { color: var(--ink); font-weight: 600; font-size: .95rem; display: block; margin-bottom: 3px; }
+  th, td { padding: 10px 20px; text-align: left; border-bottom: 1px solid var(--rule); }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .69rem; font-weight: 500;
+    letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted); background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.hl td { background: var(--band); }
+  tr.hl td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .66rem; letter-spacing: .07em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+  }
+  .tag.c { background: color-mix(in srgb, var(--rust) 15%, transparent); color: var(--rust-ink); }
+  .tag.o { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-ink); }
+
+  /* ---------- callouts ---------- */
+  .note {
+    margin: 26px 0; padding: 20px 24px;
+    background: var(--surface-2);
+    border-radius: 3px;
+    border-left: 3px solid var(--rule-firm);
+    font-size: .92rem;
+  }
+  .note.key { border-left-color: var(--accent); background: var(--band); }
+  .note p:last-child { margin-bottom: 0; }
+  .note .eyebrow { display: block; margin-bottom: 10px; }
+
+  .pull {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(1.12rem, 2.2vw, 1.4rem);
+    line-height: 1.44;
+    color: var(--ink);
+    margin: 42px 0;
+    padding-left: 24px;
+    border-left: 2px solid var(--accent);
+    max-width: 46ch;
+    text-wrap: balance;
+  }
+
+  /* two-column compare */
+  .vs { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 18px; margin: 28px 0; }
+  .vs > div {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; padding: 22px 24px;
+  }
+  .vs h4 {
+    margin: 0 0 4px; font-size: .93rem; font-weight: 600;
+    font-family: "IBM Plex Sans", sans-serif;
+  }
+  .vs .sub { font-size: .74rem; color: var(--muted); margin: 0 0 16px; font-family: "IBM Plex Mono", monospace; }
+  .vs ul { margin: 0; padding-left: 1.05rem; font-size: .87rem; }
+  .vs li { margin-bottom: 8px; }
+  .vs .now { border-top: 2px solid var(--rust); }
+  .vs .prop { border-top: 2px solid var(--accent); }
+
+  details {
+    margin: 16px 0; border: 1px solid var(--rule);
+    border-radius: 3px; background: var(--surface); padding: 0;
+  }
+  summary {
+    cursor: pointer; padding: 14px 20px;
+    font-size: .87rem; font-weight: 500; color: var(--ink);
+    list-style: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+  "; font-family: "IBM Plex Mono", monospace; color: var(--accent); }
+  details[open] summary::before { content: "\2212  "; }
+  details[open] summary { border-bottom: 1px solid var(--rule); }
+  .details-body { padding: 18px 20px 4px; font-size: .89rem; }
+  .details-body p { margin-bottom: 14px; }
+
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 26px 0; }
+  .steps li {
+    counter-increment: s;
+    display: grid; grid-template-columns: 2.1rem 1fr; gap: 16px;
+    padding: 16px 0; border-bottom: 1px solid var(--rule);
+    margin: 0;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(s, decimal-leading-zero);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .76rem; color: var(--accent); padding-top: .22rem;
+  }
+  /* three items (::before, b, span) into a two-column grid: pin both text
+     items to column 2 so the description doesn't fall into the number gutter */
+  .steps b {
+    grid-column: 2; margin-bottom: 3px;
+    color: var(--ink); font-weight: 600; font-size: .93rem;
+  }
+  .steps span { grid-column: 2; font-size: .875rem; color: var(--ink-2); }
+
+  /* ---------- figures / diagrams ---------- */
+  figure {
+    margin: 32px 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 26px 28px 20px;
+    box-shadow: var(--shadow);
+  }
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; }
+  figcaption {
+    margin-top: 18px; padding-top: 15px;
+    border-top: 1px solid var(--rule);
+    font-size: .8rem; line-height: 1.55; color: var(--muted);
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .dgm-box  { fill: var(--surface-2); stroke: var(--rule-firm); stroke-width: 1; }
+  .dgm-own  { fill: var(--band); stroke: var(--accent); stroke-width: 1.5; }
+  .dgm-shut { fill: var(--surface-2); stroke: var(--rust); stroke-width: 1.5; }
+  .dgm-t    { fill: var(--ink); font-family: "IBM Plex Sans", sans-serif; font-size: 13px; font-weight: 500; }
+  .dgm-s    { fill: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
+  .dgm-h    { fill: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .1em; }
+  .dgm-ln   { stroke: var(--rule-firm); stroke-width: 1.5; fill: none; }
+  .dgm-br   { fill: none; stroke-width: 1; stroke-dasharray: 4 4; }
+
+  /* ---------- application catalogue ---------- */
+  .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; margin: 28px 0; }
+  .cat {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-top: 2px solid var(--accent);
+    border-radius: 3px; padding: 20px 22px 18px;
+  }
+  .cat h4 {
+    margin: 0 0 3px; font-size: .92rem; font-weight: 600;
+    font-family: "IBM Plex Sans", sans-serif; color: var(--ink);
+  }
+  .cat .cost {
+    display: block; margin: 0 0 14px;
+    font-family: "IBM Plex Mono", monospace; font-size: .715rem;
+    letter-spacing: .04em; color: var(--accent-ink);
+  }
+  .cat ul { margin: 0; padding-left: 1.02rem; font-size: .845rem; }
+  .cat li { margin-bottom: 7px; color: var(--ink-2); }
+  .cat li b { color: var(--ink); font-weight: 600; }
+
+  footer {
+    margin-top: 82px; padding-top: 26px;
+    border-top: 2px solid var(--ink);
+    font-size: .79rem; color: var(--muted);
+  }
+  footer p { color: var(--muted); font-size: .79rem; }
+
+  @media (max-width: 700px) {
+    .shead { grid-template-columns: 1fr; gap: 4px; }
+    .shead .num { padding-top: 0; }
+    .shead .dek { grid-column: 1; }
+    .row-c { grid-template-columns: 1fr; gap: 3px; }
+    .row-c .nm { text-align: left; }
+    .axis { margin-left: 0; }
+    .track { display: flex; align-items: center; }
+    .track .v { position: static; margin-left: 9px; height: auto; }
+    .bar { min-width: max-content; padding-right: 4px; }
+    .tip { display: none; }
+  }
+</style>
+
+<div class="doc">
+
+  <header class="masthead">
+    <div class="kicker">
+      <span class="eyebrow">Internal Proposal &nbsp;&middot;&nbsp; Infrastructure &amp; Budget</span>
+    </div>
+    <h1>The case for routing our own inference</h1>
+    <p class="standfirst">
+      Analysing 1,800+ ministry transcripts is not a hard engineering problem &mdash; it is a
+      procurement problem. The pipeline is already built and already provider-neutral. The
+      only remaining decision is which model we pay to run it, and that single choice moves
+      the cost of a full corpus pass by a factor of roughly <strong>175&times;</strong>.
+    </p>
+    <div class="meta-row">
+      <span><b>Prepared for</b> Foundation leadership</span>
+      <span><b>Subject</b> Adopting OpenRouter as the inference provider</span>
+      <span><b>Date</b> 27 August 2026</span>
+      <span><b>System</b> transcript-theme-analyzer</span>
+    </div>
+  </header>
+
+  <div class="verdict">
+    <span class="eyebrow">The recommendation in four numbers</span>
+    <div class="figs">
+      <div class="fig">
+        <span class="n a">$227</span>
+        <span class="l">One full pass over the corpus on Claude Opus 5</span>
+      </div>
+      <div class="fig">
+        <span class="n b">$1.29</span>
+        <span class="l">The identical pass on DeepSeek V4 Flash via OpenRouter</span>
+      </div>
+      <div class="fig">
+        <span class="n b">0</span>
+        <span class="l">Lines of code that must change to switch</span>
+      </div>
+      <div class="fig">
+        <span class="n b">$2,713</span>
+        <span class="l">Saved on a twelve-theme research programme</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 1 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">01</span>
+      <h2>What we are actually asking a model to do</h2>
+      <p class="dek">Before comparing prices, the workload has to be stated precisely &mdash; because the
+        shape of the task is the reason a cheaper model is defensible here.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        The analyzer takes a transcript and a theme &mdash; say <em>&ldquo;the glory of God&rdquo;</em> &mdash; and
+        returns a structured judgement: a relevance score from 0 to 100, whether the treatment is
+        explicit or tangential, a short reasoning paragraph, and a list of passages where the theme
+        is discussed. Each passage is identified not by quoting it, but by returning a short verbatim
+        phrase at its start and another at its end.
+      </p>
+      <p>
+        That last detail matters more than it looks. The model never reproduces the passage text.
+        It returns two boundary markers, and <code>extraction.py</code> then locates and slices the
+        real passage out of the source with a regular expression. The expensive part of the job &mdash;
+        emitting long verbatim quotations &mdash; was deliberately designed out of the model's
+        responsibilities and handed to deterministic code.
+      </p>
+      <p>
+        Transcripts under the single-pass limit are handled in one call. Longer ones are split into
+        overlapping ~12,000-token chunks, scored in parallel, and reconciled by one final synthesis
+        call. So the unit of work is not &ldquo;read a transcript&rdquo; &mdash; it is a small number of
+        tightly-constrained, schema-bound scoring calls.
+      </p>
+
+      <div class="note key">
+        <span class="eyebrow">Why this framing decides the argument</span>
+        <p>
+          We are not asking a model to write, to reason across documents, to use tools, or to
+          hold a long agentic conversation. We are asking it to read one bounded passage, apply
+          a rubric, and fill in a fixed JSON schema. This is the single most commoditised
+          capability in the current model market &mdash; the task where the gap between a
+          frontier model and a competent cheap one is narrowest.
+        </p>
+      </div>
+    </div>
+
+    <h3>The measured shape of one transcript</h3>
+    <div class="prose">
+      <p>
+        These are not estimates. They are the recorded usage from a real run already sitting in
+        <code>results/</code>, for one chunked transcript:
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>Recorded token usage, one chunked transcript</b>Source: <span class="mono">results/x-ai__grok-4.3.json</span> &mdash; 5 calls, 14.6 seconds wall clock</caption>
+        <thead>
+          <tr><th>Call</th><th class="num">Input tokens</th><th class="num">Output tokens</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>chunk_0</td><td class="num">11,240</td><td class="num">1,059</td></tr>
+          <tr><td>chunk_1</td><td class="num">11,149</td><td class="num">929</td></tr>
+          <tr><td>chunk_2</td><td class="num">11,118</td><td class="num">881</td></tr>
+          <tr><td>chunk_3</td><td class="num">2,001</td><td class="num">922</td></tr>
+          <tr><td>synthesis</td><td class="num">769</td><td class="num">431</td></tr>
+          <tr class="hl"><td><strong>Total</strong></td><td class="num"><strong>36,277</strong></td><td class="num"><strong>4,222</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        Note the ratio: <strong>input tokens outnumber output tokens roughly nine to one</strong>.
+        This workload is overwhelmingly about <em>reading</em>, not <em>writing</em>. That is
+        important because output tokens are the expensive half of every price list &mdash; typically
+        four to five times the input rate. A read-heavy workload is exactly the profile where a
+        cheap model's advantage compounds hardest.
+      </p>
+    </div>
+
+    <h3>Scaling that to the corpus</h3>
+    <div class="prose">
+      <p>
+        Extrapolating across 1,800 transcripts with a realistic length mix &mdash; 30% short
+        (~30&nbsp;min), 45% medium (~1&nbsp;hr), 25% long (~2&nbsp;hr) &mdash; and reproducing the
+        pipeline's own single-pass/chunking branch gives the workload below. The model that
+        produces these figures is checked into the repository as <code>cost_model.py</code>,
+        so any of these numbers can be re-derived &mdash; and re-run against the real corpus with
+        <code>--transcript-dir</code> once it is mounted, for exact rather than modelled figures.
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>One full corpus pass, one theme</b>1,800 transcripts, single model, no retries</caption>
+        <thead><tr><th>Quantity</th><th class="num">Volume</th></tr></thead>
+        <tbody>
+          <tr><td>API calls</td><td class="num">3,150</td></tr>
+          <tr><td>Input tokens</td><td class="num">31,011,750</td></tr>
+          <tr><td>Output tokens</td><td class="num">2,893,500</td></tr>
+          <tr class="hl"><td><strong>Total tokens</strong></td><td class="num"><strong>33,905,250</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 2 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">02</span>
+      <h2>What that workload costs, by model</h2>
+      <p class="dek">Same tokens, same pipeline, same output schema. The only variable is the price list.</p>
+    </div>
+
+    <div class="panel wide">
+      <p class="panel-h">Cost of one full corpus pass</p>
+      <p class="panel-sub">1,800 transcripts &times; 1 theme &middot; logarithmic scale &mdash; the range spans three orders of magnitude, so bar length shows scale and the printed figure beside each bar carries the exact value. The full table below gives the same figures with per-transcript cost and token rates.</p>
+
+      <div class="chart">
+        <div class="row-c">
+          <div class="nm">DeepSeek V4 Flash Latest</div>
+          <div class="track"><div class="bar alt" style="--w:10.3%; width:10.3%"></div><span class="v" style="--w:10.3%">$1.29</span><span class="tip">$0.0007 per transcript &middot; $0.03 in / $0.10 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">DeepSeek V4 Flash 0423</div>
+          <div class="track"><div class="bar alt" style="--w:18.4%; width:18.4%"></div><span class="v" style="--w:18.4%">$2.73</span><span class="tip">$0.0015 per transcript &middot; $0.068 in / $0.168 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">DeepSeek V4 Flash (standard)</div>
+          <div class="track"><div class="bar alt" style="--w:22.0%; width:22.0%"></div><span class="v" style="--w:22.0%">$3.80</span><span class="tip">$0.0021 per transcript &middot; $0.098 in / $0.196 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Gemini 2.5 Flash-Lite</div>
+          <div class="track"><div class="bar alt" style="--w:23.8%; width:23.8%"></div><span class="v" style="--w:23.8%">$4.49</span><span class="tip">$0.0025 per transcript &middot; $0.10 in / $0.40 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Gemini 3.1 Flash-Lite</div>
+          <div class="track"><div class="bar alt" style="--w:35.2%; width:35.2%"></div><span class="v" style="--w:35.2%">$12.76</span><span class="tip">$0.0071 per transcript &middot; $0.25 in / $1.50 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Gemini 3 Flash</div>
+          <div class="track"><div class="bar alt" style="--w:42.7%; width:42.7%"></div><span class="v" style="--w:42.7%">$25.52</span><span class="tip">$0.0142 per transcript &middot; $0.50 in / $3.00 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Claude Haiku 4.5</div>
+          <div class="track"><div class="bar claude" style="--w:49.0%; width:49.0%"></div><span class="v" style="--w:49.0%">$45.48</span><span class="tip">$0.0253 per transcript &middot; $1.00 in / $5.00 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Claude Sonnet 5</div>
+          <div class="track"><div class="bar claude" style="--w:56.5%; width:56.5%"></div><span class="v" style="--w:56.5%">$90.96</span><span class="tip">$0.0505 per transcript &middot; $2.00 in / $10.00 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Gemini 3.1 Pro</div>
+          <div class="track"><div class="bar alt" style="--w:57.7%; width:57.7%"></div><span class="v" style="--w:57.7%">$102.07</span><span class="tip">$0.0567 per transcript &middot; $2.00 in / $12.00 out per M</span></div>
+        </div>
+        <div class="row-c">
+          <div class="nm">Claude Opus 5</div>
+          <div class="track"><div class="bar claude" style="--w:66.4%; width:66.4%"></div><span class="v" style="--w:66.4%">$227.40</span><span class="tip">$0.1263 per transcript &middot; $5.00 in / $25.00 out per M</span></div>
+        </div>
+      </div>
+
+      <div class="axis">
+        <span style="left:7.5%">$1</span>
+        <span style="left:32.5%">$10</span>
+        <span style="left:57.5%">$100</span>
+        <span style="left:82.5%">$1,000</span>
+      </div>
+
+      <div class="legend">
+        <span><i class="claude"></i>Anthropic direct &mdash; current arrangement</span>
+        <span><i class="alt"></i>Routed via OpenRouter &mdash; proposed</span>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>Full price comparison</b>List rates per million tokens, fetched 27 Aug 2026. OpenRouter figures include the 5.5% credit top-up fee; OpenRouter applies no per-token markup.</caption>
+        <thead>
+          <tr>
+            <th>Model</th><th>Route</th>
+            <th class="num">In $/M</th><th class="num">Out $/M</th>
+            <th class="num">Corpus pass</th><th class="num">Per transcript</th><th class="num">vs Opus 5</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="hl">
+            <td><strong>DeepSeek V4 Flash Latest</strong></td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.030</td><td class="num">0.100</td>
+            <td class="num"><strong>$1.29</strong></td><td class="num">$0.0007</td><td class="num">177&times;</td>
+          </tr>
+          <tr>
+            <td>DeepSeek V4 Flash 0423 <span class="mono" style="color:var(--muted)">(pinned)</span></td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.068</td><td class="num">0.168</td>
+            <td class="num">$2.73</td><td class="num">$0.0015</td><td class="num">83&times;</td>
+          </tr>
+          <tr>
+            <td>DeepSeek V4 Flash (standard)</td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.098</td><td class="num">0.196</td>
+            <td class="num">$3.80</td><td class="num">$0.0021</td><td class="num">60&times;</td>
+          </tr>
+          <tr>
+            <td>Gemini 2.5 Flash-Lite</td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.100</td><td class="num">0.400</td>
+            <td class="num">$4.49</td><td class="num">$0.0025</td><td class="num">51&times;</td>
+          </tr>
+          <tr>
+            <td>Gemini 3.1 Flash-Lite</td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.250</td><td class="num">1.500</td>
+            <td class="num">$12.76</td><td class="num">$0.0071</td><td class="num">18&times;</td>
+          </tr>
+          <tr>
+            <td>Gemini 3 Flash</td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">0.500</td><td class="num">3.000</td>
+            <td class="num">$25.52</td><td class="num">$0.0142</td><td class="num">9&times;</td>
+          </tr>
+          <tr>
+            <td>Claude Haiku 4.5</td><td><span class="tag c">Anthropic</span></td>
+            <td class="num">1.000</td><td class="num">5.000</td>
+            <td class="num">$45.48</td><td class="num">$0.0253</td><td class="num">5&times;</td>
+          </tr>
+          <tr>
+            <td>Claude Sonnet 5</td><td><span class="tag c">Anthropic</span></td>
+            <td class="num">2.000</td><td class="num">10.000</td>
+            <td class="num">$90.96</td><td class="num">$0.0505</td><td class="num">2.5&times;</td>
+          </tr>
+          <tr>
+            <td>Gemini 3.1 Pro</td><td><span class="tag o">OpenRouter</span></td>
+            <td class="num">2.000</td><td class="num">12.000</td>
+            <td class="num">$102.07</td><td class="num">$0.0567</td><td class="num">2.2&times;</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Opus 5</strong></td><td><span class="tag c">Anthropic</span></td>
+            <td class="num">5.000</td><td class="num">25.000</td>
+            <td class="num"><strong>$227.40</strong></td><td class="num">$0.1263</td><td class="num">&mdash;</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="pull">
+      One corpus pass on Opus 5 costs more than three years of DeepSeek at a
+      pass every week.
+    </p>
+
+    <h3>The same comparison at programme scale</h3>
+    <div class="prose">
+      <p>
+        A single pass over a single theme is not the real workload. Thematic research means many
+        themes &mdash; the glory of God, forgiveness, covenant, discipleship, and so on &mdash; each
+        requiring its own full pass over the corpus. At twelve themes the gap stops being a
+        line item and becomes a budget decision:
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>Twelve-theme research programme</b>1,800 transcripts &times; 12 themes = 37,800 calls, 372M input + 34.7M output tokens</caption>
+        <thead><tr><th>Model</th><th class="num">Programme cost</th><th class="num">Cost vs DeepSeek</th></tr></thead>
+        <tbody>
+          <tr class="hl"><td><strong>DeepSeek V4 Flash Latest</strong></td><td class="num"><strong>$15.44</strong></td><td class="num">&mdash;</td></tr>
+          <tr><td>Gemini 2.5 Flash-Lite</td><td class="num">$53.91</td><td class="num">+$38</td></tr>
+          <tr><td>Gemini 3.1 Flash-Lite</td><td class="num">$153.10</td><td class="num">+$138</td></tr>
+          <tr><td>Gemini 3 Flash</td><td class="num">$306.20</td><td class="num">+$291</td></tr>
+          <tr><td>Claude Haiku 4.5</td><td class="num">$545.75</td><td class="num">+$530</td></tr>
+          <tr><td>Claude Sonnet 5</td><td class="num">$1,091.50</td><td class="num">+$1,076</td></tr>
+          <tr><td>Claude Opus 5</td><td class="num">$2,728.76</td><td class="num">+$2,713</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <span class="eyebrow">A note on honesty in these figures</span>
+      <p>
+        These are list prices against a modelled corpus. Three things will move them, and all three
+        move <em>every</em> model in the table in the same direction, so the ratios hold:
+        retries on transient failures add perhaps 2&ndash;5%; the real corpus may skew longer than
+        modelled (the sensitivity run at +50% length simply doubles every figure); and Gemini's
+        newest Flash tier is currently on introductory pricing that is scheduled to rise on
+        1 January 2027. DeepSeek's position is not sensitive to any of these.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= 3 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">03</span>
+      <h2>The hidden cost nobody budgets: iteration</h2>
+      <p class="dek">The corpus pass is the cheap part. Getting the prompt right is what you actually pay for.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        The figures above assume we run the pipeline once and accept the result. That is not how
+        this work goes. Tuning a thematic rubric means running a sample, reading the output,
+        discovering the model is over-scoring tangential mentions, adjusting the prompt, and running
+        again. Ten to thirty iterations before a rubric is trustworthy is normal, not excessive.
+      </p>
+      <p>
+        On an expensive model, that iteration budget is the thing that quietly kills the project.
+        Every experiment carries a real price, so the team starts rationing experiments &mdash;
+        testing on twenty transcripts instead of two hundred, accepting the first prompt that
+        looks acceptable, and shipping a rubric nobody has properly stress-tested. The cost
+        structure begins dictating the research method.
+      </p>
+      <p>
+        At DeepSeek rates, a full 1,800-transcript run costs less than a cup of coffee. Iteration
+        stops being a budgeted decision and becomes free. We can run the whole corpus twenty times
+        while refining the rubric and still spend under $30. That is not merely a saving &mdash;
+        it is a different and better way of doing the research.
+      </p>
+
+      <div class="vs">
+        <div class="now">
+          <h4>Iterating on Claude Opus 5</h4>
+          <p class="sub">20 full-corpus experiments</p>
+          <ul>
+            <li><strong>$4,548</strong> in inference</li>
+            <li>Every experiment needs justifying</li>
+            <li>Testing shrinks to small samples, so rubric flaws surface late</li>
+            <li>Prompt quality is bounded by budget, not by judgement</li>
+          </ul>
+        </div>
+        <div class="prop">
+          <h4>Iterating on DeepSeek V4 Flash</h4>
+          <p class="sub">20 full-corpus experiments</p>
+          <ul>
+            <li><strong>$25.80</strong> in inference</li>
+            <li>No approval needed for any single run</li>
+            <li>Full-corpus testing every time, so flaws surface immediately</li>
+            <li>Prompt quality is bounded only by how carefully we read the output</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 4 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">04</span>
+      <h2>The subscription we already pay for cannot fund a single line of this</h2>
+      <p class="dek">This is the most common and most expensive misunderstanding in any conversation about AI cost. It deserves the fullest explanation in this document, because every budget figure above depends on it being understood.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        The natural question from anyone reviewing this proposal is: <em>we already pay Anthropic
+        every month &mdash; why are we being asked to pay for tokens on top of that?</em>
+      </p>
+      <p>
+        The answer is that Anthropic sells two entirely different things under the same brand
+        name, on two separate billing systems, through two separate websites, with two separate
+        sets of credentials. Paying for one gives you no access whatsoever to the other. This is
+        not a technicality or a loophole to be negotiated &mdash; it is how the products are
+        deliberately structured, and the same structure applies at OpenAI, Google, and every other
+        major vendor.
+      </p>
+
+      <div class="note key">
+        <span class="eyebrow">The distinction in one line</span>
+        <p>
+          <strong>A subscription is a seat for a person. An API key is fuel for a machine.</strong>
+          Our transcript pipeline is a machine. It has no seat, no login, and no human at the
+          keyboard &mdash; so there is nothing for the subscription to apply to.
+        </p>
+      </div>
+
+      <h3>The two products, side by side</h3>
+      <p>
+        It helps to see exactly where the line falls. Note in particular that the two are managed
+        on different domains &mdash; <code>claude.ai</code> versus
+        <code>console.anthropic.com</code> &mdash; and that a login for one is not a login for the
+        other:
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>Claude subscription vs Claude API</b>Two products, two bills, no overlap between them</caption>
+        <thead>
+          <tr><th>&nbsp;</th><th>Claude.ai subscription</th><th>Claude API</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>What you buy</strong></td>
+            <td>A named person's right to use Anthropic's own apps</td>
+            <td>Metered compute your own software can call</td>
+          </tr>
+          <tr>
+            <td><strong>Managed at</strong></td>
+            <td class="mono">claude.ai</td>
+            <td class="mono">console.anthropic.com</td>
+          </tr>
+          <tr>
+            <td><strong>How you pay</strong></td>
+            <td>Flat monthly fee per seat</td>
+            <td>Per million tokens, drawn from prepaid credit</td>
+          </tr>
+          <tr>
+            <td><strong>Credential</strong></td>
+            <td>Email and password &mdash; a human login</td>
+            <td>A secret API key &mdash; issued to software</td>
+          </tr>
+          <tr>
+            <td><strong>Reached by</strong></td>
+            <td>Web app, desktop app, mobile app, Claude Code</td>
+            <td>Any program that can make an HTTPS request</td>
+          </tr>
+          <tr>
+            <td><strong>Usage limits</strong></td>
+            <td>Capped at a human's working pace, resetting on a rolling window</td>
+            <td>Rate-limited by concurrency and tokens per minute; scales with spend</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td>Text on a screen for a person to read</td>
+            <td>Structured, schema-validated data for a program to consume</td>
+          </tr>
+          <tr class="hl">
+            <td><strong>Can it run our pipeline?</strong></td>
+            <td><strong>No &mdash; at any price tier</strong></td>
+            <td><strong>Yes</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        Our own configuration file already carries this warning, written into
+        <code>.env.example</code> after the team ran into it directly:
+        <em>&ldquo;Needs credits on console.anthropic.com; a Claude.ai subscription does not fund
+        API calls.&rdquo;</em>
+      </p>
+
+      <h3>&ldquo;But Claude Code works with our subscription &mdash; isn't that programmatic?&rdquo;</h3>
+      <p>
+        This is the sharpest version of the objection and it deserves a direct answer, because on
+        the surface it looks like a counter-example. Claude Code is a developer tool that runs in a
+        terminal, writes files, and executes commands &mdash; and yes, it can be authorised with a
+        Claude.ai subscription rather than API credit.
+      </p>
+      <p>
+        But Claude Code is still <em>an application Anthropic built, that a developer sits in
+        front of</em>. The subscription entitles a person to use Anthropic's software. It does not
+        turn that entitlement into an endpoint that <em>our</em> software is allowed to call. There
+        is no address our pipeline can send a request to that draws on a subscription, and no
+        credential it could present if there were. The subscription is consumed by a human working
+        interactively; it is not a fuel line that other programs can tap.
+      </p>
+      <p>
+        This is the crux of the whole proposal. What we need is not a better assistant for a
+        person. We need an <strong>engine our own software can call, 3,150 times, unattended,
+        overnight</strong>, and that is a category of product the subscription simply does not
+        contain &mdash; not at Pro, not at Max, not at any tier. The moment we want to build
+        something rather than converse with something, we are in API territory and paying per
+        token. The only remaining question is whose per-token rate.
+      </p>
+
+      <h3>Why the chat window cannot do the job even by brute force</h3>
+      <p>
+        Suppose we accepted the constraint and tried to do it by hand anyway &mdash; staff pasting
+        transcripts into the chat window to avoid API charges. It is worth working out what that
+        actually costs, because it is the arrangement organisations drift into when they believe
+        the subscription is already paying for everything.
+      </p>
+      <p>
+        One theme requires <strong>3,150 separate paste-and-copy operations</strong>, each
+        producing a JSON object a person must then transfer into a results file without a
+        transcription error. At an optimistic two minutes per operation, that is roughly
+        <strong>105 hours of staff time for a single theme</strong>, and about
+        <strong>1,260 hours &mdash; most of a full-time year &mdash; for the twelve-theme
+        programme</strong>. Against that, the same twelve themes cost $15.44 and run unattended.
+      </p>
+      <p>
+        And the labour is the smaller problem. The chat window structurally cannot provide what the
+        pipeline depends on:
+      </p>
+      <ul>
+        <li><strong>No schema enforcement.</strong> The API constrains the model's decoder so the JSON is valid by construction. A chat reply is prose that merely looks like JSON, and a single malformed field silently corrupts a result.</li>
+        <li><strong>No concurrency.</strong> The pipeline runs up to twelve calls simultaneously. A person works strictly one at a time.</li>
+        <li><strong>No checkpointing.</strong> An interrupted batch resumes from its last completed transcript. An interrupted human loses their place.</li>
+        <li><strong>No usage record.</strong> Every API call returns exact token counts, which is how the figures in this document exist at all. Chat sessions produce no auditable cost or reproducibility record.</li>
+        <li><strong>No model comparison.</strong> The evaluation gate in &sect;09 depends on sending byte-identical input to several models. Retyping a prompt into different chat windows is not a controlled comparison.</li>
+        <li><strong>No integration.</strong> Nothing downstream &mdash; the marker extraction, the aggregation, the Word report &mdash; can consume text a person reads off a screen.</li>
+      </ul>
+
+      <h3>What this means for the decision</h3>
+      <p>
+        The choice was never &ldquo;use the subscription we already have&rdquo; versus &ldquo;pay
+        for OpenRouter&rdquo;. That option does not exist. Whichever way we go, this workload is
+        billed per token on top of any subscription we hold, and the subscription continues to be
+        useful for exactly what it is for &mdash; staff working interactively with Claude.
+      </p>
+      <p>
+        Once that is clear, the comparison becomes a straightforward one between per-token rates
+        for the same operation: <strong>$227.40 a pass from Anthropic, or $1.29 from DeepSeek
+        through OpenRouter.</strong> And it clarifies what OpenRouter actually is in this picture.
+        It is not a cheaper subscription. It is the same category of product as the Anthropic API
+        &mdash; metered compute, an API key, no seats &mdash; bought from a marketplace of vendors
+        instead of from one.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= 5 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">05</span>
+      <h2>Where the value actually sits: the model, or what we build on it</h2>
+      <p class="dek">The strategic argument, and the one most likely to be challenged. It deserves a careful version rather than a slogan.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        The instinct behind &ldquo;let's use the best model&rdquo; is sound in general and wrong
+        here, and it is worth being precise about why rather than simply asserting that all models
+        are the same.
+      </p>
+      <p>
+        The honest position is this. Frontier models are genuinely better than cheap ones &mdash; at
+        long-horizon agentic work, at hard multi-step reasoning, at complex code, at holding a
+        difficult problem across many turns. Anthropic's advantage is real and largely lives in the
+        engineering around the model: tool orchestration, context management, safety behaviour,
+        agent frameworks. Those are excellent products and worth their price <em>for the problems
+        they solve</em>.
+      </p>
+      <p>
+        But the capability distribution is not uniform across tasks. It is wide at the frontier
+        &mdash; the hardest agentic and reasoning work &mdash; and it narrows sharply as tasks
+        become bounded and well-specified. Our task sits at the narrow end. Score one passage
+        against a rubric; emit a fixed JSON object. Every model in the comparison table supports
+        native structured output, which means the schema is enforced by the decoder rather than
+        hoped for from the prompt. The failure mode we care about is not &ldquo;can it think&rdquo;
+        but &ldquo;does it apply the rubric consistently&rdquo; &mdash; and consistency at
+        constrained scoring is where cheap models have closed the gap fastest.
+      </p>
+
+      <p class="pull">
+        We are not buying intelligence. We are buying a rubric applied 3,150 times without
+        drifting.
+      </p>
+
+      <h3>The infrastructure argument, stated carefully</h3>
+      <p>
+        Anthropic's premium buys, among other things, an infrastructure layer: agent loops, memory,
+        managed sandboxes, tool execution. For this project, we do not use any of it. Our
+        infrastructure is our own, and it is specifically shaped to this corpus:
+      </p>
+      <ul>
+        <li><strong>Boundary-marker extraction</strong> &mdash; the model returns two short phrases; regex slices the real passage. Cuts output tokens by an order of magnitude and removes paraphrasing risk entirely.</li>
+        <li><strong>Adaptive chunking with overlap</strong> &mdash; sized to this corpus's transcripts, with map-reduce synthesis, rather than a generic long-context strategy.</li>
+        <li><strong>Append-only JSONL checkpointing</strong> &mdash; an interrupted 1,800-transcript batch resumes rather than re-paying for completed work. Chosen over rewriting one document specifically because that is O(N&sup2;) at this scale and leaves a torn-file window on every save.</li>
+        <li><strong>Three-tier concurrency control</strong> &mdash; per-chunk, per-transcript, and a global in-flight ceiling, so we tune throughput against a provider's rate limit rather than accepting whatever a hosted agent gives us.</li>
+        <li><strong>Structured Word report generation</strong> &mdash; output shaped for the people who will actually read it.</li>
+      </ul>
+      <p>
+        None of that comes from a model vendor. All of it is ours, and it is the part that makes
+        the results useful. What we need from the vendor is one narrow thing done reliably and
+        cheaply: score a passage, return valid JSON. Paying a frontier premium for a hosted
+        infrastructure layer we have replaced with better-fitted code of our own is paying twice
+        for one thing and using neither fully.
+      </p>
+
+      <div class="note">
+        <span class="eyebrow">Where the premium would be justified</span>
+        <p>
+          If a future project needs genuine multi-step reasoning across documents, autonomous tool
+          use, or judgement calls with real consequences, the frontier premium may well be correct
+          &mdash; and OpenRouter does not prevent that. Claude models are available through it too.
+          The argument is not &ldquo;never pay for a frontier model&rdquo;. It is
+          &ldquo;match the model to the task, and keep the ability to make that choice per task
+          rather than once for everything.&rdquo;
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 6 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">06</span>
+      <h2>From buying a product to owning a capability</h2>
+      <p class="dek">The proposal is not really about DeepSeek, and it is not really about saving $226 a run. It is about which layer of the stack the Foundation occupies.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        Everything so far has argued about price. This section argues about position, and it is the
+        part with the longest consequences.
+      </p>
+
+      <h3>Claude.ai is not the model. It is an application built on the model.</h3>
+      <p>
+        This distinction is easy to miss because the branding hides it. When staff use Claude, they
+        are not using a model &mdash; they are using a <em>product</em> that Anthropic built on top
+        of a model: a chat interface, a conversation history, a set of features, a set of defaults,
+        a set of decisions about what the tool should and should not do. The model underneath is a
+        component. The product is the thing wrapped around it.
+      </p>
+      <p>
+        The moment you hold an API key, you are standing where Anthropic stands. The same component
+        they built their product on is available to build <em>ours</em> on &mdash; and ours can be
+        shaped to this Foundation rather than to the general public. That is what an API key
+        actually buys, and it is worth far more than the discount.
+      </p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 900 400" role="img"
+           aria-label="Two stacks compared. Today: our staff sit on top of Claude.ai, Anthropic's application, which sits on one model — Anthropic controls both lower layers. With an API key: our staff and our audience sit on top of our own applications, which sit on OpenRouter's single key, which reaches Claude, Gemini, DeepSeek and other models — we control the application layer and the model becomes a swappable part.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" opacity=".55"/>
+          </marker>
+        </defs>
+
+        <!-- ============ LEFT: today ============ -->
+        <text x="30" y="22" class="dgm-h">TODAY &mdash; WE ARE USERS</text>
+
+        <rect x="30" y="44" width="330" height="46" rx="2" class="dgm-box"/>
+        <text x="195" y="66" text-anchor="middle" class="dgm-t">Our staff</text>
+        <text x="195" y="81" text-anchor="middle" class="dgm-s">a person, at a keyboard</text>
+
+        <line x1="195" y1="90" x2="195" y2="122" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <text x="205" y="110" class="dgm-s">uses</text>
+
+        <rect x="30" y="124" width="330" height="58" rx="2" class="dgm-shut"/>
+        <text x="195" y="148" text-anchor="middle" class="dgm-t">Claude.ai &middot; Claude Code</text>
+        <text x="195" y="166" text-anchor="middle" class="dgm-s">Anthropic's application</text>
+
+        <line x1="195" y1="182" x2="195" y2="214" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <text x="205" y="202" class="dgm-s">calls</text>
+
+        <rect x="30" y="216" width="330" height="46" rx="2" class="dgm-box"/>
+        <text x="195" y="238" text-anchor="middle" class="dgm-t">One model</text>
+        <text x="195" y="253" text-anchor="middle" class="dgm-s">chosen for us</text>
+
+        <rect x="20" y="114" width="350" height="158" rx="3" class="dgm-br" stroke="var(--rust)"/>
+        <text x="195" y="296" text-anchor="middle" class="dgm-s" style="font-size:11px">Anthropic owns both layers.</text>
+        <text x="195" y="312" text-anchor="middle" class="dgm-s" style="font-size:11px">We consume what the product offers.</text>
+
+        <!-- divider -->
+        <line x1="450" y1="14" x2="450" y2="360" stroke="var(--rule-firm)" stroke-width="1" stroke-dasharray="2 5"/>
+
+        <!-- ============ RIGHT: with a key ============ -->
+        <text x="540" y="22" class="dgm-h">WITH AN API KEY &mdash; WE ARE BUILDERS</text>
+
+        <rect x="540" y="44" width="330" height="46" rx="2" class="dgm-box"/>
+        <text x="705" y="66" text-anchor="middle" class="dgm-t">Our staff &mdash; and our audience</text>
+        <text x="705" y="81" text-anchor="middle" class="dgm-s">congregation, readers, the public</text>
+
+        <line x1="705" y1="90" x2="705" y2="122" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <text x="715" y="110" class="dgm-s">uses</text>
+
+        <rect x="540" y="124" width="330" height="58" rx="2" class="dgm-own"/>
+        <text x="705" y="148" text-anchor="middle" class="dgm-t">Our applications</text>
+        <text x="705" y="166" text-anchor="middle" class="dgm-s">analyzer &middot; archive search &middot; chatbot &middot; translation</text>
+
+        <line x1="705" y1="182" x2="705" y2="212" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <text x="715" y="201" class="dgm-s">calls</text>
+
+        <rect x="540" y="214" width="330" height="40" rx="2" class="dgm-box"/>
+        <text x="705" y="239" text-anchor="middle" class="dgm-t">OpenRouter &mdash; one key</text>
+
+        <!-- fan-out to models -->
+        <path d="M 705 254 L 705 268 L 587 268 L 587 286" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <path d="M 705 254 L 705 286" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+        <path d="M 705 254 L 705 268 L 823 268 L 823 286" class="dgm-ln" marker-end="url(#ar)" color="currentColor"/>
+
+        <rect x="540" y="288" width="94" height="34" rx="2" class="dgm-box"/>
+        <text x="587" y="309" text-anchor="middle" class="dgm-t" style="font-size:11.5px">Claude</text>
+        <rect x="658" y="288" width="94" height="34" rx="2" class="dgm-box"/>
+        <text x="705" y="309" text-anchor="middle" class="dgm-t" style="font-size:11.5px">DeepSeek</text>
+        <rect x="776" y="288" width="94" height="34" rx="2" class="dgm-box"/>
+        <text x="823" y="309" text-anchor="middle" class="dgm-t" style="font-size:11.5px">Gemini &hellip;</text>
+
+        <rect x="530" y="114" width="350" height="76" rx="3" class="dgm-br" stroke="var(--accent)"/>
+        <text x="705" y="346" text-anchor="middle" class="dgm-s" style="font-size:11px">We own the application layer.</text>
+        <text x="705" y="362" text-anchor="middle" class="dgm-s" style="font-size:11px">The model becomes a swappable part.</text>
+      </svg>
+      <figcaption>
+        <b>The same model, two positions in the stack.</b> On the left, the application layer belongs
+        to Anthropic and we reach the model only through the product they built on it &mdash; so what
+        we can do is bounded by what that product does. On the right, the application layer is ours:
+        we build software fitted to this Foundation, serve it to our audience as well as our staff,
+        and treat the model as a component we can replace without rewriting anything above it.
+        The dashed outlines mark who controls what.
+      </figcaption>
+    </figure>
+
+    <div class="prose">
+      <p class="pull">
+        The ceiling on what we can build stops being someone else's product roadmap and starts
+        being our own imagination.
+      </p>
+
+      <p>
+        Approving an Anthropic account approves access to Anthropic models. Approving OpenRouter
+        approves access to a catalogue &mdash; Anthropic, Google, DeepSeek, OpenAI, Meta, Mistral,
+        xAI and others &mdash; behind a single credential, a single balance, and a single invoice.
+        The organisational implications are larger than the per-token saving.
+      </p>
+
+      <div class="vs">
+        <div class="now">
+          <h4>Per-vendor accounts</h4>
+          <p class="sub">Current arrangement</p>
+          <ul>
+            <li>A separate account, key, invoice and finance approval per vendor</li>
+            <li>Trying a new model is a procurement request</li>
+            <li>A vendor outage or price rise stops the work</li>
+            <li>Model choice is fixed at approval time, not at task time</li>
+            <li>Spend is scattered across bills nobody consolidates</li>
+          </ul>
+        </div>
+        <div class="prop">
+          <h4>One routed account</h4>
+          <p class="sub">Proposed</p>
+          <ul>
+            <li>One key, one balance, one invoice, one approval</li>
+            <li>Trying a new model is a one-line config change</li>
+            <li>Automatic failover across providers serving the same model</li>
+            <li>Model choice made per task, revisited whenever the market moves</li>
+            <li>Every call attributed and visible in one dashboard</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>What that actually makes buildable</h3>
+      <p>
+        The transcript analyzer is one application. It is not a special case &mdash; it is simply
+        the first thing we happened to build. The same key, the same balance and the same approval
+        cover everything below, and the archive we are about to index is the raw material for most
+        of it.
+      </p>
+      <p>
+        Costs shown are monthly, at DeepSeek rates, sized to the Foundation's realistic volumes:
+        roughly 60 new teachings a month and a few thousand audience interactions.
+      </p>
+    </div>
+
+    <div class="cat-grid">
+      <div class="cat">
+        <h4>Search and discovery over our own archive</h4>
+        <span class="cost">~$0.60 / month</span>
+        <ul>
+          <li><b>Meaning-based archive search.</b> &ldquo;Where has this been taught on suffering as formation?&rdquo; &mdash; answered by concept, not keyword match.</li>
+          <li><b>A grounded question-answering assistant.</b> Answers drawn only from our published teaching, with citations back to the transcript and timestamp.</li>
+          <li><b>Related-teaching suggestions.</b> Surfacing the other places a subject was treated, so nothing sits orphaned in the archive.</li>
+          <li><b>Doctrinal consistency checks.</b> Flagging where the same subject was treated differently across years, for a human to review.</li>
+        </ul>
+      </div>
+
+      <div class="cat">
+        <h4>Publishing and production</h4>
+        <span class="cost">~$0.15 / month</span>
+        <ul>
+          <li><b>Titles, summaries and descriptions</b> generated for each new teaching, in a consistent house voice.</li>
+          <li><b>Chapter markers and section headings</b> for long recordings, so listeners can navigate.</li>
+          <li><b>Transcript cleanup.</b> Correcting raw speech-to-text &mdash; punctuation, speaker labels, proper nouns &mdash; before it enters the corpus.</li>
+          <li><b>Pull-quote and clip selection.</b> Identifying the passages worth excerpting for social and print.</li>
+        </ul>
+      </div>
+
+      <div class="cat">
+        <h4>Reach, translation and accessibility</h4>
+        <span class="cost">~$0.60 / month</span>
+        <ul>
+          <li><b>Translation into the languages our audiences actually use</b> &mdash; four languages across every new teaching costs cents, where human translation is priced per thousand words.</li>
+          <li><b>Subtitles and captions</b> generated from the transcripts we already hold.</li>
+          <li><b>Plain-language versions</b> of dense material, for younger readers and second-language audiences.</li>
+          <li><b>Study guides and discussion questions</b> derived from a teaching, for small groups.</li>
+        </ul>
+      </div>
+
+      <div class="cat">
+        <h4>Member care and communications</h4>
+        <span class="cost">~$0.15 / month</span>
+        <ul>
+          <li><b>First-line answers to common questions</b> &mdash; service times, giving, events &mdash; freeing staff for the conversations that need a person.</li>
+          <li><b>Triage and routing</b> of incoming requests to the right person, with urgent items escalated rather than answered.</li>
+          <li><b>Correspondence drafting</b> in the Foundation's voice, always reviewed and sent by a human.</li>
+          <li><b>Daily devotional drafts</b> assembled from the archive, edited before publication.</li>
+        </ul>
+      </div>
+
+      <div class="cat">
+        <h4>Internal operations</h4>
+        <span class="cost">~$0.10 / month</span>
+        <ul>
+          <li><b>Meeting notes and action items</b> from recorded internal sessions.</li>
+          <li><b>Grant and report drafting</b>, working from our own documents and figures.</li>
+          <li><b>Document classification and filing</b> across years of unsorted material.</li>
+          <li><b>Data extraction</b> from scanned forms, registers and historical records.</li>
+        </ul>
+      </div>
+
+      <div class="cat">
+        <h4>Research and scholarship</h4>
+        <span class="cost">~$1.29 per corpus pass</span>
+        <ul>
+          <li><b>The thematic analysis programme</b> this proposal funds &mdash; the first application, not the last.</li>
+          <li><b>Longitudinal study.</b> How the treatment of a theme developed across two decades of teaching.</li>
+          <li><b>Scripture and citation indexing</b> across the whole corpus, built once and reused everywhere.</li>
+          <li><b>Comparative analysis</b> against other published bodies of work.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="prose">
+      <div class="note key">
+        <span class="eyebrow">The whole catalogue, costed</span>
+        <p>
+          Every application above, running every month, comes to <strong>under $2 a month</strong>
+          in inference at DeepSeek rates &mdash; less than one Claude Opus corpus pass would cost
+          for a decade. The constraint on this list has never been the money. It is that each new
+          idea currently requires its own vendor decision, its own account and its own approval,
+          and that friction is what stops small useful projects from ever being attempted. One
+          approved key removes it permanently.
+        </p>
+      </div>
+
+      <p>
+        There is a second-order effect worth naming. Because every one of these applications is
+        built on <em>our</em> infrastructure rather than inside someone else's product, they
+        compound. The chunking, the checkpointing, the marker extraction and the report generation
+        written for the analyzer are not single-use &mdash; they are the beginnings of a toolkit
+        the next application inherits. Each thing we build makes the following one cheaper. Nothing
+        built inside a chat window compounds that way, because nothing built there is ours to reuse.
+      </p>
+
+      <div class="note">
+        <span class="eyebrow">How OpenRouter makes its money</span>
+        <p>
+          Worth stating for the finance review, because it is unusually simple: OpenRouter does not
+          mark up token prices. Inference is billed at the upstream provider's list rate. Their
+          revenue is a <strong>5.5% fee on credit top-ups</strong> by card (5% by crypto), with a
+          $0.80 per-transaction minimum. That minimum means small top-ups carry a poor effective
+          rate &mdash; on a $5 top-up it works out near 16% &mdash; so we should fund the account
+          in reasonable increments. On a $200 top-up the fee is $11. There is no subscription and
+          no monthly commitment; unused credit simply remains as credit.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 7 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">07</span>
+      <h2>What switching actually requires</h2>
+      <p class="dek">This is the part of the proposal with no engineering risk attached, because the work was already done.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        The analyzer was built provider-neutral from the start. It talks to any OpenAI-compatible
+        endpoint through <code>base_url</code> and <code>api_key</code> alone &mdash;
+        <code>client.py</code> is a thin factory over the standard SDK, and nothing above it knows
+        or cares which vendor is on the other end. Switching provider is editing three lines of
+        <code>.env</code>:
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>The entire migration</b>Configuration only &mdash; no code changes, no dependency changes, no schema changes</caption>
+        <thead><tr><th>Setting</th><th>Anthropic direct</th><th>OpenRouter</th></tr></thead>
+        <tbody>
+          <tr><td><code>LLM_PROVIDER</code></td><td class="mono">anthropic</td><td class="mono">openrouter</td></tr>
+          <tr><td><code>LLM_BASE_URL</code></td><td class="mono">api.anthropic.com/v1/</td><td class="mono">openrouter.ai/api/v1</td></tr>
+          <tr><td><code>LLM_DEFAULT_MODEL</code></td><td class="mono">claude-sonnet-5</td><td class="mono">deepseek/deepseek-v4-flash</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        Both configurations are already written into <code>.env.example</code> as documented,
+        commented alternatives. The repository has in fact already been switched
+        (commit <code>43442cd</code>, <em>&ldquo;switched to openrouter&rdquo;</em>), which means
+        this proposal is asking leadership to ratify and fund a technical decision that has been
+        validated in practice, not to authorise a risky rewrite.
+      </p>
+      <p>
+        Reversal is symmetric. If DeepSeek disappoints on evaluation, the same three lines point
+        back at Claude &mdash; and can point at Claude <em>through OpenRouter</em>, so even
+        choosing Anthropic models does not require abandoning the routed arrangement.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= 8 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">08</span>
+      <h2>Risks, and what we do about each</h2>
+      <p class="dek">Stated in full, including the ones that argue against this proposal.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        A proposal that lists only advantages should not be trusted. These are the genuine
+        objections, with the mitigation for each.
+      </p>
+    </div>
+
+    <details>
+      <summary>The cheaper model might score less accurately than Claude</summary>
+      <div class="details-body">
+        <p>
+          This is the real risk, and it should not be waved away &mdash; it should be measured. The
+          repository already contains the instrument:
+          <code>transcript_theme_analyzer/eval/compare_models.py</code> runs the same transcript and
+          theme across several models and prints score, token usage and latency side by side.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> before committing to a full run, take a stratified sample of
+          30&ndash;50 transcripts with known thematic content, score them on Claude Opus 5,
+          DeepSeek V4 Flash and a Gemini Flash tier, and have a domain reader blind-rank the
+          outputs. Adopt the cheapest model whose agreement with the expert reading is acceptable.
+          At $1.29 per full pass, running the definitive comparison costs almost nothing, so this
+          decision can be made on evidence instead of on brand.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Routing through an intermediary adds a dependency and a point of failure</summary>
+      <div class="details-body">
+        <p>
+          True. OpenRouter sits between us and the model provider, so its availability becomes
+          our availability.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> the same provider-neutral design that makes switching to
+          OpenRouter a three-line change makes switching away from it a three-line change. We are
+          never locked in, and the pipeline's checkpointing means an outage mid-run costs the
+          in-flight transcripts only, not the batch. In practice routing also <em>adds</em>
+          resilience, because OpenRouter fails over between multiple upstream providers serving the
+          same model &mdash; something a direct single-vendor account cannot do.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Data handling and where transcripts are processed</summary>
+      <div class="details-body">
+        <p>
+          Transcript content is sent to a third-party inference provider, and the routed
+          arrangement means the specific upstream provider may vary.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> this consideration exists identically with a direct
+          Anthropic account &mdash; the content leaves our infrastructure either way. What changes
+          is that it becomes a decision we make explicitly. OpenRouter allows pinning to specific
+          upstream providers where that matters. Before the full run, confirm the material's
+          sensitivity classification: published teaching intended for wide distribution carries a
+          different profile from pastoral or private recordings, and if the corpus contains the
+          latter it should be segregated and handled under a stricter policy regardless of vendor.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>A moving model target makes results non-comparable across a long batch</summary>
+      <div class="details-body">
+        <p>
+          A model alias such as <code>deepseek-v4-flash</code> redirects to whatever the latest
+          version is. If it updates mid-batch, transcripts analysed on different days may not be
+          scored by the same model &mdash; a genuine methodological problem for research output.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> use a pinned snapshot for any batch whose results will be
+          compared or published. <code>deepseek/deepseek-v4-flash-0423</code> is a fixed version at
+          $2.73 per corpus pass &mdash; a $1.44 premium over the floating alias, which is a
+          negligible price for methodological consistency. Our <code>.env.example</code> already
+          documents this option and the reason for it.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Prepaid credit is a different budgeting model than invoiced billing</summary>
+      <div class="details-body">
+        <p>
+          OpenRouter is prepaid: credit is bought up front and drawn down. Some finance processes
+          prefer arrears invoicing.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> at these volumes prepayment is an advantage, not a
+          constraint &mdash; it is a hard spending ceiling that cannot be exceeded by a runaway
+          job, which invoiced billing does not give us. A $50 balance covers the entire proposed
+          first-year programme with substantial headroom. Fund in increments of $100 or more so
+          the $0.80 minimum transaction fee stays negligible.
+        </p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Cheap model pricing may not last</summary>
+      <div class="details-body">
+        <p>
+          Today's rates reflect intense competition. Gemini's newest Flash tier is explicitly on
+          introductory pricing scheduled to rise on 1 January 2027, and others may follow.
+        </p>
+        <p>
+          <strong>Mitigation:</strong> this is precisely the argument <em>for</em> a routed
+          arrangement rather than against it. When one provider's price rises, we move to another
+          by editing one line, without a new vendor account or a new approval cycle. A direct
+          single-vendor account gives us no such option &mdash; it converts every price change
+          into a procurement project.
+        </p>
+      </div>
+    </details>
+  </section>
+
+  <!-- ================= 9 ================= -->
+  <section>
+    <div class="shead">
+      <span class="num">09</span>
+      <h2>Recommendation</h2>
+      <p class="dek">What we are asking leadership to approve, and what happens next.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        <strong>Adopt OpenRouter as the Foundation's inference provider, and run the transcript
+        analysis programme on DeepSeek V4 Flash, subject to an evaluation gate.</strong>
+      </p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <caption><b>Proposed budget, first year</b>Covering the full thematic programme, iteration, and the Foundation's other AI work</caption>
+        <thead><tr><th>Item</th><th class="num">Cost</th></tr></thead>
+        <tbody>
+          <tr><td>Model evaluation on a 50-transcript sample, across four models</td><td class="num">&lt; $1</td></tr>
+          <tr><td>Prompt iteration &mdash; 20 full-corpus experiments</td><td class="num">$25.80</td></tr>
+          <tr><td>Twelve-theme research programme, pinned snapshot model</td><td class="num">$32.81</td></tr>
+          <tr><td>Contingency for retries, re-runs and corpus growth (50%)</td><td class="num">$29.31</td></tr>
+          <tr><td>Headroom for other Foundation AI applications</td><td class="num">$60.00</td></tr>
+          <tr class="hl"><td><strong>Recommended initial credit purchase</strong></td><td class="num"><strong>$150.00</strong></td></tr>
+          <tr><td style="color:var(--muted)">The same programme on Claude Opus 5, for comparison</td><td class="num" style="color:var(--rust)">$7,300+</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        A single $150 credit purchase &mdash; less than the cost of one full corpus pass on Opus 5
+        &mdash; funds the entire first-year programme with roughly four times the headroom it needs,
+        and leaves capacity for every other AI application the Foundation might want to try.
+      </p>
+    </div>
+
+    <h3>Proposed sequence</h3>
+    <ol class="steps">
+      <li>
+        <b>Fund the account</b>
+        <span>Purchase $150 in OpenRouter credit. Set a hard spend ceiling on the key so no job can exceed the approved amount.</span>
+      </li>
+      <li>
+        <b>Run the evaluation gate</b>
+        <span>Score a stratified 50-transcript sample on Claude Opus 5, DeepSeek V4 Flash and Gemini Flash-Lite using the existing <code>compare_models</code> harness. Have a domain reader blind-rank the outputs.</span>
+      </li>
+      <li>
+        <b>Decide on evidence, and record the decision</b>
+        <span>Adopt the cheapest model whose agreement with the expert reading is acceptable. If that turns out to be Claude, we run Claude &mdash; through OpenRouter, keeping the routing benefits. Document the comparison so the choice can be revisited when the market moves.</span>
+      </li>
+      <li>
+        <b>Pin the model version</b>
+        <span>Switch to a pinned snapshot for the production batch, so every transcript in a published result set was scored by the same model.</span>
+      </li>
+      <li>
+        <b>Run the corpus</b>
+        <span>Execute the full 1,800-transcript pass per theme, with checkpointing enabled so any interruption resumes rather than re-paying.</span>
+      </li>
+      <li>
+        <b>Report actuals against this estimate</b>
+        <span>Publish real token usage and spend from the first full run, so the next budget request rests on measured figures rather than a model.</span>
+      </li>
+    </ol>
+
+    <div class="note key">
+      <span class="eyebrow">The decision in one sentence</span>
+      <p>
+        We have already built infrastructure well-fitted to this corpus; what remains is to stop
+        paying frontier-tier rates for the one narrow, commoditised operation we actually need
+        from a vendor, and to buy that operation from a market rather than from a single supplier
+        &mdash; keeping, in the process, the freedom to change our minds cheaply.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      <strong>Sources and reproducibility.</strong> Token volumes are derived from recorded usage in
+      <span class="mono">results/x-ai__grok-4.3.json</span> and from the pipeline's own chunking
+      logic. All cost figures are produced by <span class="mono">cost_model.py</span>, which
+      can be re-run against the real corpus with <span class="mono">--transcript-dir</span> for exact
+      rather than modelled numbers. Anthropic rates are first-party API list prices; DeepSeek and
+      Gemini rates are OpenRouter list prices, all retrieved 27 August 2026. OpenRouter fee structure
+      per their published pricing terms. Prices in USD and subject to change &mdash; the modelled
+      ratios are more durable than the absolute figures.
+    </p>
+    <p style="margin-top:14px">
+      Prepared for internal review &middot; GLH Extraction Team &middot; 27 August 2026
+    </p>
+  </footer>
+
+</div>
