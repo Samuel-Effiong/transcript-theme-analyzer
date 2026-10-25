@@ -723,7 +723,7 @@ async def _analyze_single_pass(
     result, _ = await _call_with_retry(
         client,
         model=model,
-        system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
+        system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT,
         user=user,
         schema_cls=MultiThemeChunkAnalysis,
         schema_name="multi_theme_chunk_analysis",
@@ -797,7 +797,7 @@ async def _analyze_one_chunk(
         result, _ = await _call_with_retry(
             client,
             model=model,
-            system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2,
+            system=prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT,
             user=user,
             schema_cls=MultiThemeChunkAnalysis,
             schema_name="multi_theme_chunk_analysis",
@@ -850,7 +850,7 @@ async def _synthesize_reasoning(
     result, _ = await _call_with_retry(
         client,
         model=model,
-        system=prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2,
+        system=prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT,
         user=user,
         schema_cls=MultiThemeSynthesis,
         schema_name="multi_theme_synthesis",

@@ -93,11 +93,27 @@ def test_theme_block_precedes_transcript():
     assert c.index("TB") < c.index("TX")
 
 
-def test_prompt_constants():
-    assert prompts.PROMPT_VERSION == "multi-v3"
-    assert "THEMES list" in prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2
-    assert "more than one theme" in prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT_V2
-    assert '"themes"' in prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2
+def test_prompt_v4_content():
+    p = prompts.MULTI_THEME_ANALYSIS_SYSTEM_PROMPT
+    assert prompts.PROMPT_VERSION == "multi-v4"
+    assert "THEMES list" in p and "more than one theme" in p
+    # the theme text is the definition
+    assert "inclusion" in p and "exclusion" in p
+    # score bands
+    for band in ("85", "60", "30", "1", "0"):
+        assert band in p
+    # teaching-point passages
+    assert "teaching point" in p
+    assert "entire segment" in p
+    assert "Understanding the Will of God" in p
+    # whole-word markers
+    assert "complete words" in p
+    # two scored examples plus the absent case
+    assert p.count('"relevance_score":') == 3
+    assert '"explicitness": "tangential"' in p
+    # the format section states each rule once
+    assert p.lower().count("never omit") <= 1
+    assert '"themes"' in prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT
 
 
 def test_strictify_nested_entry_has_additional_properties_false():

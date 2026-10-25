@@ -99,7 +99,7 @@ class FakeClient:
                 if marker in user:
                     raise RuntimeError(f"synthetic failure for {marker}")
             ids = _ID_LINE.findall(user)
-            if kwargs["messages"][0]["content"] == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2:
+            if kwargs["messages"][0]["content"] == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT:
                 body = {"themes": [{"theme_id": t, "reasoning": "because"} for t in ids]}
                 if self.bad_synthesis:
                     body = "unparseable"

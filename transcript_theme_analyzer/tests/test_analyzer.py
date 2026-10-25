@@ -174,7 +174,7 @@ class _FakeCompletions:
         user = [m for m in kwargs["messages"] if m["role"] == "user"][-1]["content"]
         system = kwargs["messages"][0]["content"]
         ids = _ID_LINE.findall(user)
-        if system == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2:
+        if system == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT:
             body = {"themes": [{"theme_id": t, "reasoning": f"synth {t}"} for t in ids]}
         else:
             m = _CHUNK_LINE.search(user)
@@ -184,7 +184,7 @@ class _FakeCompletions:
                 self.entry(t, n) for t in ids if not (omitting and t in self.omit)
             ]}
         content = json.dumps(body)
-        if self.bad_synthesis and system == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT_V2:
+        if self.bad_synthesis and system == prompts.MULTI_THEME_SYNTHESIS_SYSTEM_PROMPT:
             content = "not json"
         msg = SimpleNamespace(content=content, model_extra={})
         usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20, total_tokens=120)
