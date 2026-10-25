@@ -425,3 +425,143 @@ def test_plan_volumes_oversized_transcript_gets_its_own_volume_unsplit():
 
 def test_plan_volumes_empty_input_is_empty_plan():
     assert _plan_volumes([], budget=100) == []
+
+
+# --- volume and index documents ------------------------------------------
+
+from transcript_theme_analyzer.word_report import build_index_docx, build_volume_docx  # noqa: E402
+
+
+def _rows(document, table_index=0):
+    return [[c.text for c in r.cells] for r in document.tables[table_index].rows]
+
+
+def test_volume_docx_has_subtitle_own_overview_and_only_its_transcripts():
+    report = _ranked_report([10, 10, 10])
+    matched = _matching_transcripts(report, None)
+    doc = build_volume_docx(report, matched[1:], volume_no=2, volume_count=2)
+    assert _headings(doc, 1) == ["Grace"]
+    assert doc.paragraphs[1].text == "Volume 2 of 2"
+    assert doc.paragraphs[2].text.startswith("Generated ")
+    assert _rows(doc) == [["Transcript", "Relevance Score"], ["ep1", "89"], ["ep2", "88"]]
+    assert _headings(doc, 2) == ["Transcript: ep1", "Transcript: ep2"]
+
+
+def test_volume_docx_bookmarks_use_global_rank_and_links_match():
+    report = _ranked_report([10, 10, 10])
+    matched = _matching_transcripts(report, None)
+    doc = build_volume_docx(report, matched[2:], volume_no=2, volume_count=2)
+    xml = doc.element.xml
+    assert 'w:name="t2"' in xml and 'w:anchor="t2"' in xml
+    assert 'w:name="t0"' not in xml
+
+
+def test_index_docx_lists_every_transcript_with_passages_and_volume():
+    transcripts = {
+        "strong": [("m1", make_success(90, locations=[{"excerpt": "a b", "title": "t"}, {"excerpt": "c", "title": "t"}]))],
+        "weak": [("m1", make_success(40, locations=[{"excerpt": "d", "title": "t"}]))],
+        "nothing": [("m1", make_success(0, locations=[]))],
+        "broken": [("m1", make_error("m1"))],
+    }
+    report = build_report("Grace", transcripts)
+    by_name = {t.name: t for t in report.transcripts}
+    doc = build_index_docx(report, {id(by_name["strong"]): 1, id(by_name["weak"]): 2})
+    assert _headings(doc, 1) == ["Grace"]
+    assert doc.paragraphs[1].text == "Index of 2 volumes"
+    assert _rows(doc) == [
+        ["Transcript", "Relevance Score", "Passages", "Volume"],
+        ["strong", "90", "2", "1"],
+        ["weak", "40", "1", "2"],
+        ["nothing", "0", "0", "—"],
+        ["broken (failed)", "FAILED", "—", "—"],
+    ]
+    assert "w:anchor" not in doc.element.xml
+
+
+# --- file layout and housekeeping ---------------------------------------
+
+from transcript_theme_analyzer.themes import Theme  # noqa: E402
+from transcript_theme_analyzer.word_report import write_theme_docxs  # noqa: E402
+
+
+def _big_run(sizes, theme_id="grace"):
+    """Multi-theme payloads: one transcript per size, each with one excerpt of
+    that many words under the given theme."""
+    return {
+        f"ep{i}": [("m1", _multi_payload({theme_id: {
+            "theme": "Grace", "relevance_score": 90 - i, "explicitness": "explicit",
+            "reasoning": "r", "locations": [{"excerpt": _words(n), "title": "t"}]}}, {}))]
+        for i, n in enumerate(sizes)
+    }
+
+
+def test_theme_within_budget_keeps_flat_file(tmp_path):
+    paths = write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([400, 400]), str(tmp_path), volume_words=1000)
+    assert paths == [str(tmp_path / "docx" / "grace.docx")]
+    assert not (tmp_path / "docx" / "grace").exists()
+
+
+def test_theme_over_budget_writes_index_and_zero_padded_volumes(tmp_path):
+    paths = write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([700, 700, 700]), str(tmp_path), volume_words=1000)
+    d = tmp_path / "docx" / "grace"
+    assert paths == [str(d / "grace-index.docx"), str(d / "grace-vol-01.docx"),
+                     str(d / "grace-vol-02.docx"), str(d / "grace-vol-03.docx")]
+    assert not (tmp_path / "docx" / "grace.docx").exists()
+    index = Document(paths[0])
+    assert _rows(index)[1:] == [["ep0", "90", "1", "1"], ["ep1", "89", "1", "2"], ["ep2", "88", "1", "3"]]
+    vol2 = Document(paths[2])
+    assert vol2.paragraphs[1].text == "Volume 2 of 3"
+    assert _headings(vol2, 2) == ["Transcript: ep1"]
+
+
+def test_every_passage_is_printed_verbatim_across_volumes(tmp_path):
+    run = _big_run([700, 700])
+    paths = write_theme_docxs([Theme(id="grace", name="Grace")], run, str(tmp_path), volume_words=1000)
+    # Every excerpt word is the token "w" (the first and last carry the quote
+    # marks); no heading or caption is that token.
+    printed = " ".join(p.text for path in paths[1:] for p in Document(path).paragraphs)
+    assert sum(tok.strip("\u201c\u201d") == "w" for tok in printed.split()) == 1400
+
+
+def test_theme_with_no_matches_is_a_flat_file_not_a_directory(tmp_path):
+    run = {"ep1": [("m1", _multi_payload({"grace": {"theme": "Grace", "relevance_score": 0,
+           "explicitness": "none", "reasoning": "", "locations": []}}, {}))]}
+    paths = write_theme_docxs([Theme(id="grace", name="Grace")], run, str(tmp_path), volume_words=1000)
+    assert paths == [str(tmp_path / "docx" / "grace.docx")]
+    assert "No transcripts contained relevant excerpts" in "\n".join(p.text for p in Document(paths[0]).paragraphs)
+
+
+def test_switching_layouts_leaves_one_layout_on_disk(tmp_path):
+    theme = [Theme(id="grace", name="Grace")]
+    write_theme_docxs(theme, _big_run([700, 700, 700]), str(tmp_path), volume_words=1000)
+    write_theme_docxs(theme, _big_run([100]), str(tmp_path), volume_words=1000)
+    assert sorted(p.name for p in (tmp_path / "docx").iterdir()) == ["grace.docx"]
+    write_theme_docxs(theme, _big_run([700, 700, 700]), str(tmp_path), volume_words=1000)
+    assert sorted(p.name for p in (tmp_path / "docx").iterdir()) == ["grace"]
+
+
+def test_fewer_volumes_on_rerun_removes_higher_numbers_and_keeps_lock_files(tmp_path):
+    theme = [Theme(id="grace", name="Grace")]
+    write_theme_docxs(theme, _big_run([700, 700, 700]), str(tmp_path), volume_words=1000)
+    d = tmp_path / "docx" / "grace"
+    (d / ".~lock.grace-vol-01.docx#").write_text("libreoffice lock")
+    (d / "~$grace-vol-02.docx").write_bytes(b"word lock")
+    write_theme_docxs(theme, _big_run([700, 700]), str(tmp_path), volume_words=1000)
+    assert sorted(p.name for p in d.iterdir()) == [
+        ".~lock.grace-vol-01.docx#", "grace-index.docx", "grace-vol-01.docx", "grace-vol-02.docx", "~$grace-vol-02.docx"]
+
+
+def test_stale_volume_directory_of_dropped_theme_is_removed_but_foreign_dirs_stay(tmp_path):
+    write_theme_docxs([Theme(id="old", name="Old")], _big_run([700, 700], theme_id="old"), str(tmp_path), volume_words=1000)
+    (tmp_path / "docx" / "mine").mkdir()
+    (tmp_path / "docx" / "mine" / "mine-notes.docx").write_bytes(b"keep")
+    write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([100]), str(tmp_path), volume_words=1000)
+    assert sorted(p.name for p in (tmp_path / "docx").iterdir()) == ["grace.docx", "mine"]
+    assert (tmp_path / "docx" / "mine" / "mine-notes.docx").exists()
+
+
+def test_volume_directory_with_foreign_file_loses_only_tool_files(tmp_path):
+    write_theme_docxs([Theme(id="old", name="Old")], _big_run([700, 700], theme_id="old"), str(tmp_path), volume_words=1000)
+    (tmp_path / "docx" / "old" / "my-notes.txt").write_text("keep")
+    write_theme_docxs([Theme(id="grace", name="Grace")], _big_run([100]), str(tmp_path), volume_words=1000)
+    assert sorted(p.name for p in (tmp_path / "docx" / "old").iterdir()) == ["my-notes.txt"]

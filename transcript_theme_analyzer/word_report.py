@@ -1,6 +1,9 @@
-"""Generates one consolidated Word (.docx) document per theme
-(``docx/<theme_id>.docx``) with every relevant excerpt from every transcript
-that matched that theme:
+"""Generates one consolidated Word (.docx) report per theme with every
+relevant excerpt from every transcript that matched that theme. A theme that
+fits ``DOCX_VOLUME_WORDS`` of excerpt text is one file, ``docx/<theme_id>.docx``;
+a larger theme is a folder ``docx/<theme_id>/`` with an index document and
+numbered volumes (``<theme_id>-index.docx``, ``<theme_id>-vol-01.docx``, ...),
+a transcript never being split across volumes. Each document holds:
 
 - Document title = the search theme.
 - An overview table (transcript × relevance score, in ranked order) right
@@ -148,33 +151,81 @@ def _plan_volumes(matched: list[TranscriptResult], budget: int) -> list[list[Tra
     return volumes
 
 
-def _add_overview_table(document: Document, report: BatchReport, matched_ids: set[int]) -> None:
+def _add_table_heading(document: Document, text: str) -> None:
     heading = document.add_paragraph()
-    run = heading.add_run("Overview")
+    run = heading.add_run(text)
     run.bold = True
     run.font.size = Pt(13)
 
-    table = document.add_table(rows=1, cols=2)
+
+def _new_table(document: Document, columns: tuple[str, ...]):
+    table = document.add_table(rows=1, cols=len(columns))
     table.style = "Light Grid Accent 1"
-    header_cells = table.rows[0].cells
-    for cell, text in zip(header_cells, ("Transcript", "Relevance Score")):
+    for cell, text in zip(table.rows[0].cells, columns):
         cell.paragraphs[0].add_run(text).bold = True
+    return table
 
-    for i, t in enumerate(report.transcripts):
-        row = table.add_row()
-        name_cell, score_cell = row.cells
 
-        if id(t) in matched_ids:
-            _add_internal_link(name_cell.paragraphs[0], t.name, f"t{i}")
-        else:
-            suffix = "" if t.best_model is not None else " (failed)"
-            name_cell.paragraphs[0].add_run(f"{t.name}{suffix}")
+def _add_name_cell(cell, t: TranscriptResult, link_to: str | None) -> None:
+    if link_to is not None:
+        _add_internal_link(cell.paragraphs[0], t.name, link_to)
+    else:
+        suffix = "" if t.best_model is not None else " (failed)"
+        cell.paragraphs[0].add_run(f"{t.name}{suffix}")
 
-        score_run = score_cell.paragraphs[0].add_run(
-            str(t.best_score) if t.best_score is not None else "FAILED"
+
+def _add_score_cell(cell, t: TranscriptResult) -> None:
+    score_run = cell.paragraphs[0].add_run(
+        str(t.best_score) if t.best_score is not None else "FAILED"
+    )
+    if t.best_score is None:
+        score_run.font.color.rgb = _FAILED_COLOR
+
+
+def _add_overview_table(
+    document: Document,
+    report: BatchReport,
+    matched_ids: set[int],
+    transcripts: list[TranscriptResult] | None = None,
+) -> None:
+    """Transcript x score table. ``transcripts`` restricts the rows (a volume
+    lists only its own); bookmarks always use the global rank in ``report``."""
+    _add_table_heading(document, "Overview")
+    table = _new_table(document, ("Transcript", "Relevance Score"))
+    for t in report.transcripts if transcripts is None else transcripts:
+        name_cell, score_cell = table.add_row().cells
+        rank = report.transcripts.index(t)
+        _add_name_cell(name_cell, t, f"t{rank}" if id(t) in matched_ids else None)
+        _add_score_cell(score_cell, t)
+
+
+def _add_index_table(document: Document, report: BatchReport, volume_of: dict[int, int]) -> None:
+    _add_table_heading(document, "Index")
+    table = _new_table(document, ("Transcript", "Relevance Score", "Passages", "Volume"))
+    for t in report.transcripts:
+        name_cell, score_cell, passages_cell, volume_cell = table.add_row().cells
+        _add_name_cell(name_cell, t, None)
+        _add_score_cell(score_cell, t)
+        passages_cell.paragraphs[0].add_run(
+            str(len(t.best_model.locations)) if t.best_model is not None else "\u2014"
         )
-        if t.best_score is None:
-            score_run.font.color.rgb = _FAILED_COLOR
+        volume = volume_of.get(id(t))
+        volume_cell.paragraphs[0].add_run(str(volume) if volume is not None else "\u2014")
+
+
+def _add_transcript_sections(
+    document: Document, report: BatchReport, transcripts: list[TranscriptResult]
+) -> None:
+    """One ``Transcript: <name>`` section per entry, bookmarked by its global
+    rank in ``report`` so overview links resolve."""
+    for n, t in enumerate(transcripts):
+        if n:
+            _add_horizontal_rule(document)
+        rank = report.transcripts.index(t)
+        heading = document.add_heading(f"Transcript: {t.name}", level=2)
+        _add_bookmark(heading, f"t{rank}", rank)
+        for location in t.best_model.locations:
+            _add_excerpt(document, location)
 
 
 def build_docx(report: BatchReport, min_score: int | None = None) -> Document:
@@ -190,19 +241,37 @@ def build_docx(report: BatchReport, min_score: int | None = None) -> Document:
         document.add_paragraph("No transcripts contained relevant excerpts for this theme.")
         return document
 
-    first = True
-    for i, t in enumerate(report.transcripts):
-        if id(t) not in matched_ids:
-            continue
-        if not first:
-            _add_horizontal_rule(document)
-        first = False
+    _add_transcript_sections(document, report, matched)
+    return document
 
-        heading = document.add_heading(f"Transcript: {t.name}", level=2)
-        _add_bookmark(heading, f"t{i}", i)
-        for location in t.best_model.locations:
-            _add_excerpt(document, location)
 
+def build_volume_docx(
+    report: BatchReport,
+    volume: list[TranscriptResult],
+    volume_no: int,
+    volume_count: int,
+) -> Document:
+    """One volume of a theme split across several files: the theme title, a
+    ``Volume N of M`` line, an overview of only this volume's transcripts
+    (all linked) and their full sections."""
+    document = Document()
+    document.add_heading(report.theme, level=1)
+    document.add_paragraph(f"Volume {volume_no} of {volume_count}")
+    document.add_paragraph(f"Generated {report.generated_at}")
+    _add_overview_table(document, report, {id(t) for t in volume}, transcripts=volume)
+    _add_transcript_sections(document, report, volume)
+    return document
+
+
+def build_index_docx(report: BatchReport, volume_of: dict[int, int]) -> Document:
+    """The index of a multi-volume theme: every transcript in the run with its
+    score, passage count and the volume that holds it. ``volume_of`` maps
+    ``id(transcript)`` to a 1-based volume number for the matched ones."""
+    document = Document()
+    document.add_heading(report.theme, level=1)
+    document.add_paragraph(f"Index of {max(volume_of.values(), default=0)} volumes")
+    document.add_paragraph(f"Generated {report.generated_at}")
+    _add_index_table(document, report, volume_of)
     return document
 
 
@@ -224,28 +293,75 @@ def write_docx_from_data(
     return write_docx(report, out_path, min_score=min_score)
 
 
+def _remove_stale(docx_dir: str, keep: set[str]) -> None:
+    """Removes this tool's output that the current run did not write, and
+    nothing else. ``keep`` holds the absolute path of every file written.
+
+    Directly in ``docx_dir``: a ``*.docx`` not in ``keep`` goes (``~$`` Word
+    lock files stay). A subdirectory is recognised as a theme's volume folder
+    only by containing ``<dir>-index.docx``; inside it every ``<dir>-*.docx``
+    not in ``keep`` goes, then the folder itself if that left it empty. Other
+    subdirectories, non-docx files and LibreOffice ``.~lock.*#`` files are
+    never touched."""
+    if not os.path.isdir(docx_dir):
+        return
+
+    def is_tool_docx(name: str, prefix: str = "") -> bool:
+        return (name.endswith(".docx") and name.startswith(prefix)
+                and not name.startswith("~$"))
+
+    def remove_unkept(folder: str, prefix: str) -> None:
+        for name in os.listdir(folder):
+            path = os.path.join(folder, name)
+            if (is_tool_docx(name, prefix) and os.path.isfile(path)
+                    and os.path.abspath(path) not in keep):
+                os.remove(path)
+
+    remove_unkept(docx_dir, "")
+    for name in os.listdir(docx_dir):
+        folder = os.path.join(docx_dir, name)
+        if os.path.isdir(folder) and os.path.isfile(os.path.join(folder, f"{name}-index.docx")):
+            remove_unkept(folder, f"{name}-")
+            try:
+                os.rmdir(folder)
+            except OSError:
+                pass  # something that is not ours is still inside
+
+
 def write_theme_docxs(
     themes: list[Theme],
     transcripts: dict[str, list[tuple[str, dict]]],
     out_dir: str,
+    volume_words: int = DEFAULT_VOLUME_WORDS,
 ) -> list[str]:
-    """Write one Word report per theme to ``out_dir/docx/<theme.id>.docx``
-    (theme ids are filesystem-safe slugs); returns the paths in theme order.
+    """Write every theme's Word report(s) under ``out_dir/docx`` and return
+    the written paths in theme order.
 
-    Any other ``*.docx`` directly in that folder is a previous run's theme
-    and is removed, so the folder only ever holds this run's themes."""
+    A theme whose matched excerpts fit ``volume_words`` is one file,
+    ``docx/<theme.id>.docx``. A larger theme becomes a folder
+    ``docx/<theme.id>/`` holding ``<theme.id>-index.docx`` (returned first)
+    and ``<theme.id>-vol-NN.docx`` for each volume, in order. Stale output of
+    a previous run is removed (see ``_remove_stale``)."""
     docx_dir = os.path.join(out_dir, "docx")
-    paths = []
+    paths: list[str] = []
     for theme in themes:
         report = build_report(theme.name, project_theme(transcripts, theme))
-        paths.append(write_docx(report, os.path.join(docx_dir, f"{theme.id}.docx")))
-    current = {f"{theme.id}.docx" for theme in themes}
-    for name in os.listdir(docx_dir) if os.path.isdir(docx_dir) else []:
-        path = os.path.join(docx_dir, name)
-        # "~$" is Word's lock file for a document someone has open.
-        if (name.endswith(".docx") and not name.startswith("~$")
-                and name not in current and os.path.isfile(path)):
-            os.remove(path)
+        plan = _plan_volumes(_matching_transcripts(report, None), volume_words)
+        if len(plan) <= 1:
+            paths.append(write_docx(report, os.path.join(docx_dir, f"{theme.id}.docx")))
+            continue
+        folder = os.path.join(docx_dir, theme.id)
+        os.makedirs(folder, exist_ok=True)
+        volume_of = {id(t): k + 1 for k, volume in enumerate(plan) for t in volume}
+        index_path = os.path.join(folder, f"{theme.id}-index.docx")
+        build_index_docx(report, volume_of).save(index_path)
+        paths.append(index_path)
+        width = max(2, len(str(len(plan))))
+        for k, volume in enumerate(plan, start=1):
+            path = os.path.join(folder, f"{theme.id}-vol-{k:0{width}d}.docx")
+            build_volume_docx(report, volume, k, len(plan)).save(path)
+            paths.append(path)
+    _remove_stale(docx_dir, {os.path.abspath(p) for p in paths})
     return paths
 
 
