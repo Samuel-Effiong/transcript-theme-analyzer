@@ -27,7 +27,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare multiple models on one transcript and theme list")
     parser.add_argument("--transcript", required=True)
     parser.add_argument("--theme", action="append", default=[], help="Repeat for several themes")
-    parser.add_argument("--themes-file", default=None, help="CSV with a 'theme' column and optional 'description'")
+    parser.add_argument("--themes-file", default=None, help="CSV with one 'theme' column (a phrase or a whole paragraph per row)")
     parser.add_argument("--max-themes", type=int, default=None, help="Override MAX_THEMES")
     parser.add_argument("--models", nargs="+", required=True)
     return parser.parse_args(argv)

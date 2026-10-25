@@ -733,16 +733,16 @@ def test_reordered_themes_reuse_checkpoint(tmp_path, stub_client):
     assert client.calls == 0, "the same theme set in another order is the same work"
 
 
-def test_changed_description_invalidates_checkpoint(tmp_path, stub_client):
+def test_changed_theme_text_invalidates_checkpoint(tmp_path, stub_client):
     directory = _write_transcripts(tmp_path, ["a.txt", "b.txt"])
     out = tmp_path / "out"
 
     stub_client()
-    _run(directory, out, _config(), themes=[Theme("a", "Alpha", "first meaning")])
+    _run(directory, out, _config(), themes=[Theme("a", "Alpha", "Alpha, first meaning")])
 
     client = stub_client()
-    _run(directory, out, _config(), themes=[Theme("a", "Alpha", "second meaning")])
-    assert client.calls == 2, "a new description is a different question"
+    _run(directory, out, _config(), themes=[Theme("a", "Alpha", "Alpha, second meaning")])
+    assert client.calls == 2, "a new theme text is a different question"
 
 
 def test_outputs_written(tmp_path, stub_client, capsys):
@@ -879,7 +879,7 @@ def test_themes_file_and_flags_combine(tmp_path, stub_client, cli_env):
     directory = _write_transcripts(tmp_path, ["a.txt"])
     csv_path = tmp_path / "themes.csv"
     csv_path.write_text(
-        "theme,description\nForgiveness,letting go of wrongs\nHope,\n", encoding="utf-8"
+        "theme\nForgiveness is letting go of wrongs done to us\nHope\n", encoding="utf-8"
     )
     out = tmp_path / "out"
 
@@ -891,9 +891,9 @@ def test_themes_file_and_flags_combine(tmp_path, stub_client, cli_env):
     assert client.calls == 1
 
     themes, transcripts = read_cache(str(out / ".raw_results.json"))
-    assert [t.id for t in themes] == ["grace", "forgiveness", "hope"]
-    assert themes[1].description == "letting go of wrongs"
-    assert list(transcripts["a"][0][1]["themes"]) == ["grace", "forgiveness", "hope"]
+    assert [t.id for t in themes] == ["grace", "forgiveness-is-letting-go-of-wrongs", "hope"]
+    assert themes[1].text == "Forgiveness is letting go of wrongs done to us"
+    assert list(transcripts["a"][0][1]["themes"]) == ["grace", "forgiveness-is-letting-go-of-wrongs", "hope"]
 
 
 def test_max_themes_flag_raises_the_limit(tmp_path, stub_client, cli_env):

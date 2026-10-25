@@ -24,7 +24,7 @@ from transcript_theme_analyzer.schema import (
 from transcript_theme_analyzer.themes import Theme
 from transcript_theme_analyzer.analyzer import MissingThemesError
 
-THEMES = [Theme("grace", "Grace"), Theme("forgiveness", "Forgiveness", "letting go")]
+THEMES = [Theme("grace", "Grace"), Theme("forgiveness", "Forgiveness", "Forgiveness \u2014 letting go")]
 
 
 def _entry(theme_id, score=50):

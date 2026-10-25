@@ -198,12 +198,7 @@ of the full transcript):
 
 
 def format_theme_block(themes: list[Theme]) -> str:
-    """One line per theme. Identical for every call in a run, so it sits
+    """One line per theme, carrying the full theme text (the definition the
+    model judges against). Identical for every call in a run, so it sits
     before the transcript and extends the cacheable prompt prefix."""
-    lines = []
-    for theme in themes:
-        line = f"- id: {theme.id} | {theme.name}"
-        if theme.description:
-            line += f" \u2014 {theme.description}"
-        lines.append(line)
-    return "\n".join(lines)
+    return "\n".join(f"- id: {theme.id} | {theme.text}" for theme in themes)

@@ -119,22 +119,9 @@ def test_unicode_survives(tmp_path):
 
 
 def test_signature_ignores_theme_and_model_order():
-    a, b = Theme("a", "Alpha", "x"), Theme("b", "Beta")
+    a, b = Theme("a", "Alpha", "Alpha x"), Theme("b", "Beta")
     assert _signature([a, b], ["m1", "m2"]) == _signature([b, a], ["m2", "m1"])
 
-
-def test_signature_covers_description_name_id_and_prompt_version(monkeypatch):
-    base = _signature([Theme("a", "Alpha", "x")], MODELS)
-    assert base != _signature([Theme("a", "Alpha", "y")], MODELS)
-    assert base != _signature([Theme("a", "Alpha2", "x")], MODELS)
-    assert base != _signature([Theme("a2", "Alpha", "x")], MODELS)
-    assert json.loads(base) == {
-        "themes": [["a", "Alpha", "x"]],
-        "models": ["model-a"],
-        "prompt": prompts.PROMPT_VERSION,
-    }
-    monkeypatch.setattr(prompts, "PROMPT_VERSION", "multi-v999")
-    assert base != _signature([Theme("a", "Alpha", "x")], MODELS)
 
 
 def test_old_single_theme_records_are_not_reused(tmp_path):

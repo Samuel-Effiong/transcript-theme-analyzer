@@ -40,11 +40,11 @@ def checkpoint_path(out_dir: str) -> str:
 def _signature(themes: list[Theme], models: list[str]) -> str:
     """Results are only reusable for the same theme set, model set and prompt
     version; anything else is a different question and must be re-analyzed.
-    Order is irrelevant (the same set is the same work), but a changed
-    description changes what the model is asked, so it counts."""
+    Order is irrelevant (the same set is the same work), but a changed theme
+    text changes what the model is asked, so it counts; the label does not."""
     return json.dumps(
         {
-            "themes": sorted([t.id, t.name, t.description] for t in themes),
+            "themes": sorted([t.id, t.text] for t in themes),
             "models": sorted(models),
             "prompt": prompts.PROMPT_VERSION,
         },

@@ -59,12 +59,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--theme",
         action="append",
         default=[],
-        help="Theme to analyze for (word, phrase, or paragraph). Repeat for several themes",
+        help="Theme to analyze for: a short label or a full description, in one string. "
+        "Repeat for several themes",
     )
     parser.add_argument(
         "--themes-file",
         default=None,
-        help="CSV with a 'theme' column and an optional 'description' column. "
+        help="CSV with one 'theme' column (a phrase or a whole paragraph per row). "
         "Combines with --theme (those come first)",
     )
     parser.add_argument(

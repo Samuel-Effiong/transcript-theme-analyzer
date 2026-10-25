@@ -7,7 +7,7 @@ from transcript_theme_analyzer import run_report, word_report
 from transcript_theme_analyzer.cache import CACHE_FILENAME, OLD_FORMAT_MESSAGE, read_cache, write_cache
 from transcript_theme_analyzer.themes import Theme
 
-THEMES = [Theme("glory", "the glory of God", "His majesty"), Theme("hope", "Hope")]
+THEMES = [Theme("glory", "the glory of God"), Theme("hope", "Hope")]
 
 
 def make_success(score):
