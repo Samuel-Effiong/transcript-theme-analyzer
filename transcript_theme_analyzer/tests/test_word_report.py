@@ -372,3 +372,56 @@ def test_stale_theme_docx_removed_on_rerun(tmp_path):
 
     assert sorted(p.name for p in docx_dir.iterdir()) == ["grace.docx", "nested", "notes.txt"]
     assert (docx_dir / "nested" / "other.docx").exists()
+
+
+# --- volume planning -------------------------------------------------------
+
+from transcript_theme_analyzer.word_report import _excerpt_words, _matching_transcripts, _plan_volumes  # noqa: E402
+
+
+def _words(n):
+    return " ".join(["w"] * n)
+
+
+def _ranked_report(sizes):
+    """One transcript per entry (ep0, ep1, ...), scores 90, 89, ... so
+    build_report keeps the given order; each has one excerpt of that many words."""
+    transcripts = {
+        f"ep{i}": [("m1", make_success(90 - i, locations=[{"excerpt": _words(n), "title": "t"}]))]
+        for i, n in enumerate(sizes)
+    }
+    return build_report("Grace", transcripts)
+
+
+def _ranked(sizes):
+    return _matching_transcripts(_ranked_report(sizes), None)
+
+
+def test_excerpt_words_counts_only_excerpt_text_across_all_passages():
+    (t,) = _ranked([0])
+    t.best_model.locations = [
+        {"excerpt": "one two three", "title": "a long title here", "speaker": "Pastor", "timestamp": "00:01"},
+        {"excerpt": "four\n\nfive", "title": "t"},
+    ]
+    assert _excerpt_words(t) == 5
+
+
+def test_plan_volumes_fills_greedily_in_rank_order():
+    matched = _ranked([60, 30, 20, 50, 10])
+    plan = _plan_volumes(matched, budget=100)
+    assert [[t.name for t in vol] for vol in plan] == [["ep0", "ep1"], ["ep2", "ep3", "ep4"]]
+
+
+def test_plan_volumes_exact_fit_stays_in_volume():
+    plan = _plan_volumes(_ranked([50, 50, 1]), budget=100)
+    assert [len(v) for v in plan] == [2, 1]
+
+
+def test_plan_volumes_oversized_transcript_gets_its_own_volume_unsplit():
+    plan = _plan_volumes(_ranked([10, 500, 10]), budget=100)
+    assert [[t.name for t in vol] for vol in plan] == [["ep0"], ["ep1"], ["ep2"]]
+    assert _excerpt_words(plan[1][0]) == 500
+
+
+def test_plan_volumes_empty_input_is_empty_plan():
+    assert _plan_volumes([], budget=100) == []

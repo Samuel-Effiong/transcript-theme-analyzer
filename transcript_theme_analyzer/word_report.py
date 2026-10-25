@@ -120,6 +120,34 @@ def _matching_transcripts(report: BatchReport, min_score: int | None) -> list[Tr
     ]
 
 
+DEFAULT_VOLUME_WORDS = 150_000
+
+
+def _excerpt_words(t: TranscriptResult) -> int:
+    """Whitespace-split word count of the transcript's excerpt text only;
+    headings, titles, timestamps and speakers do not count."""
+    return sum(len((loc.get("excerpt") or "").split()) for loc in t.best_model.locations)
+
+
+def _plan_volumes(matched: list[TranscriptResult], budget: int) -> list[list[TranscriptResult]]:
+    """Packs the ranked transcripts greedily into volumes of at most ``budget``
+    excerpt words. A transcript is never split: one larger than the budget
+    fills a volume on its own."""
+    volumes: list[list[TranscriptResult]] = []
+    current: list[TranscriptResult] = []
+    current_words = 0
+    for t in matched:
+        words = _excerpt_words(t)
+        if current and current_words + words > budget:
+            volumes.append(current)
+            current, current_words = [], 0
+        current.append(t)
+        current_words += words
+    if current:
+        volumes.append(current)
+    return volumes
+
+
 def _add_overview_table(document: Document, report: BatchReport, matched_ids: set[int]) -> None:
     heading = document.add_paragraph()
     run = heading.add_run("Overview")
