@@ -118,16 +118,25 @@ python -m transcript_theme_analyzer.cli --transcript path.docx --themes-file the
 ```
 
 ```csv
-theme,description
-forgiveness,"Extending or receiving pardon, including reconciliation"
-prayer,
-the glory of God,
+theme
+will of God
+"Teachings about God's will for an individual's personal decisions, life direction and calling. Exclude discussions of God's sovereign plan for historical events unless they directly address an individual's decisions or calling."
+prayer
 ```
 
-The header needs a `theme` column; `description` is optional and, when given,
-is shown to the model to disambiguate the theme. Header names are
-case-insensitive and blank rows are skipped. `--theme` and `--themes-file`
-combine (the `--theme` entries come first). Duplicate theme names are rejected.
+A theme is one text of any length. A short label works; a full description
+works better, because the model reads the whole text as the definition of the
+theme and treats every inclusion and exclusion in it as binding. That makes the
+description the main lever when a theme matches too much or too little. The
+first six words of the text become the theme's **label**, used for the Word file
+name, document headings and the report's column header; the full text is shown
+once beneath the label. The CSV needs a single `theme` column (header
+case-insensitive, blank rows skipped). A `description` column is no longer
+accepted: the run stops before any API call with
+`themes.csv has a 'description' column. Put the full theme text in the 'theme'
+column instead; a theme may be a phrase or a whole paragraph.` `--theme` and
+`--themes-file` combine (the `--theme` entries come first). Duplicate themes
+are rejected.
 
 **Theme limit.** A run takes at most `MAX_THEMES` themes (env var, default 5;
 `--max-themes N` overrides it for one run). Over the limit, the run stops
@@ -185,8 +194,9 @@ Every CLI run writes these into `--out-dir` (default `results/`):
     provider discount, plus a **Per theme** table (est.; see below).
   - Mobile-friendly and light/dark styled.
 - **`docx/<theme_id>.docx`** — one Word report per theme (the id is a slug of
-  the theme name, e.g. `docx/forgiveness.docx`), the curated excerpt deliverable:
-  - **Title** — the theme.
+  the theme's label, e.g. `docx/forgiveness.docx`), the curated excerpt deliverable:
+  - **Title** — the theme's label, with the full theme text beneath it when the
+    theme is longer than its label.
   - **Overview table** listing every transcript and its relevance score, ranked
     highest first; transcript names are clickable links to that transcript's
     section (transcripts with no located excerpts, or where every model run
@@ -258,11 +268,15 @@ matching, which stops a passage starting or ending inside a word) shows up in
 transcripts analysed after it. To apply it to a finished run, delete that run's
 `.checkpoint.jsonl` and re-run, which pays the model cost again.
 
+A `.raw_results.json` written before prompt v4 (when a theme was a name plus a
+separate description) is rejected by both regenerators with
+`This cache was written before prompt v4; re-run the analysis.`
+
 ### Resuming
 
 Re-running the same command after an interruption picks up where it left off.
-A checkpoint is reused only when the theme set (order does not matter; names
-and descriptions do), the models and the prompt version are all unchanged;
+A checkpoint is reused only when the theme set (order does not matter; the
+theme texts do), the models and the prompt version are all unchanged;
 otherwise the run starts fresh. `--no-resume` ignores the checkpoint.
 
 ### Comparing models
