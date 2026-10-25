@@ -93,6 +93,11 @@ class Config(BaseModel):
     max_themes: int = Field(
         default_factory=lambda: int(os.environ.get("MAX_THEMES", "5"))
     )
+    # Excerpt words per Word volume; a theme whose excerpts exceed this is
+    # split into numbered volumes plus an index document.
+    docx_volume_words: int = Field(
+        default_factory=lambda: int(os.environ.get("DOCX_VOLUME_WORDS", "150000"))
+    )
     # USD per 1M tokens, used to cost a run when the provider reports no cost.
     # Unset or empty -> None (cost shown as n/a, never $0.00).
     price_input_per_m: float | None = Field(
@@ -126,6 +131,7 @@ class Config(BaseModel):
         self.max_concurrent_transcripts = max(1, self.max_concurrent_transcripts)
         self.max_concurrent_requests = max(1, self.max_concurrent_requests)
         self.max_themes = max(1, self.max_themes)
+        self.docx_volume_words = max(1000, self.docx_volume_words)
         self.max_retries = max(1, self.max_retries)
         self.sdk_max_retries = max(0, self.sdk_max_retries)
         self.request_timeout_seconds = max(1.0, self.request_timeout_seconds)

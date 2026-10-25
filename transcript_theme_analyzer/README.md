@@ -65,6 +65,9 @@ LLM_MAX_RETRIES=5
 
 # Most themes allowed in one run (default 5). Over the limit = rejected up front.
 MAX_THEMES=5
+
+# Excerpt words per Word volume (default 150000, about 300 pages).
+DOCX_VOLUME_WORDS=150000
 ```
 
 The code's default model is `deepseek/deepseek-v4-flash`; set
