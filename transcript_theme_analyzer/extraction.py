@@ -25,9 +25,14 @@ def _find_marker(text: str, marker: str, start_pos: int = 0) -> tuple[int, int] 
     tokens = [re.escape(t) for t in marker.split()]
     if not tokens:
         return None
-    # (?<!\w)/(?!\w) rather than \b: a token may begin or end with
-    # punctuation ("waves,"), where \b would demand a word character.
-    pattern = r"(?<!\w)" + r"\s+".join(tokens) + r"(?!\w)"
+    # Anchor each edge of the marker only where it is a word character, so
+    # "grace" cannot match inside "graceful" but a marker ending in
+    # punctuation ("the sea\u2014") still matches when a letter follows it.
+    pattern = r"\s+".join(tokens)
+    if re.match(r"\w", marker):
+        pattern = r"(?<!\w)" + pattern
+    if re.search(r"\w$", marker):
+        pattern = pattern + r"(?!\w)"
     match = re.search(pattern, text[start_pos:], re.IGNORECASE)
     if match is None:
         return None

@@ -91,3 +91,13 @@ def test_find_marker_still_matches_at_text_start_end_and_next_to_punctuation():
     assert _find_marker(text, "Grace comes") == (0, 11)
     assert _find_marker(text, "waves,") == (15, 21)
     assert _find_marker(text, "not lines") == (22, 31)
+
+
+def test_find_marker_punctuation_edge_may_touch_a_letter():
+    # A marker ending in punctuation is anchored only on its word side, so prose
+    # with no space after an em-dash or ellipsis still matches.
+    assert _find_marker("he said the sea—and then", "the sea—") == (8, 16)
+    assert _find_marker("he said...then", "said...") == (3, 10)
+    assert _find_marker("x(amen)y", "(amen)") == (1, 7)
+    # ...but the word side is still anchored.
+    assert _find_marker("he unsaid...then", "said...") is None
