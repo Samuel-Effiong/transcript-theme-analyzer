@@ -73,3 +73,21 @@ def test_extract_passage_strips_and_returns_none_for_empty_result():
     # start and end markers match the same/adjacent text -- should not crash,
     # returns whatever (possibly empty) span results, never raises.
     assert passage is None or isinstance(passage, str)
+
+
+def test_find_marker_does_not_match_inside_a_word():
+    text = "The pastor is in great danger, he said."
+    # "r is in great danger" used to match inside "pastor"
+    assert _find_marker(text, "r is in great danger") is None
+
+
+def test_find_marker_does_not_match_a_prefix_of_a_longer_word():
+    text = "He spoke of graceful living."
+    assert _find_marker(text, "grace") is None
+
+
+def test_find_marker_still_matches_at_text_start_end_and_next_to_punctuation():
+    text = "Grace comes in waves, not lines"
+    assert _find_marker(text, "Grace comes") == (0, 11)
+    assert _find_marker(text, "waves,") == (15, 21)
+    assert _find_marker(text, "not lines") == (22, 31)

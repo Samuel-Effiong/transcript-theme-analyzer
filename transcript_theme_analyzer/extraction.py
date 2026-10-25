@@ -15,8 +15,9 @@ def _find_marker(text: str, marker: str, start_pos: int = 0) -> tuple[int, int] 
     whitespace (newlines vs. spaces) and case differences -- models don't
     always reproduce a marker phrase with byte-exact spacing. Searches the
     original text directly (not a normalized copy) so the returned offsets
-    are correct without a position-remapping step. Returns (start, end)
-    char offsets in `text`, or None if not found.
+    are correct without a position-remapping step. The match must start and
+    end on a word boundary so a marker can never match inside a word.
+    Returns (start, end) char offsets in `text`, or None if not found.
     """
     marker = marker.strip()
     if not marker:
@@ -24,7 +25,9 @@ def _find_marker(text: str, marker: str, start_pos: int = 0) -> tuple[int, int] 
     tokens = [re.escape(t) for t in marker.split()]
     if not tokens:
         return None
-    pattern = r"\s+".join(tokens)
+    # (?<!\w)/(?!\w) rather than \b: a token may begin or end with
+    # punctuation ("waves,"), where \b would demand a word character.
+    pattern = r"(?<!\w)" + r"\s+".join(tokens) + r"(?!\w)"
     match = re.search(pattern, text[start_pos:], re.IGNORECASE)
     if match is None:
         return None

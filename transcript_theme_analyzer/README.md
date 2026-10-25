@@ -233,6 +233,12 @@ python -m transcript_theme_analyzer.word_report --cache results/.raw_results.jso
 `run_report` rewrites `report.html` (next to the cache by default); `word_report`
 rewrites `docx/<theme_id>.docx` under `--out-dir` (default: the cache's folder).
 
+Passage boundaries are fixed at analysis time and only the extracted text is
+cached, so a change to passage extraction (such as the whole-word marker
+matching, which stops a passage starting or ending inside a word) shows up in
+transcripts analysed after it. To apply it to a finished run, delete that run's
+`.checkpoint.jsonl` and re-run, which pays the model cost again.
+
 ### Resuming
 
 Re-running the same command after an interruption picks up where it left off.
