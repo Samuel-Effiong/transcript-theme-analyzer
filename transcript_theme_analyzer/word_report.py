@@ -30,6 +30,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
 from .cache import read_cache
+from .config import load_config
 from .report import BatchReport, TranscriptResult, build_report, is_found, project_theme
 from .themes import Theme
 
@@ -367,12 +368,19 @@ def write_theme_docxs(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Regenerate every theme's docx/<theme_id>.docx from the internal analysis cache"
+        description="Regenerate every theme's Word report(s) under docx/ from the internal analysis cache"
     )
     parser.add_argument("--cache", required=True, help="Path to the .raw_results.json cache file")
     parser.add_argument(
         "--out-dir", default=None,
         help="Directory to write docx/ into (defaults to the cache file's directory)",
+    )
+    parser.add_argument(
+        "--docx-volume-words",
+        type=int,
+        default=None,
+        help="Excerpt words per Word volume before a theme is split into numbered volumes "
+        "(default: DOCX_VOLUME_WORDS or 150000)",
     )
     return parser.parse_args(argv)
 
@@ -380,12 +388,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     out_dir = args.out_dir or os.path.dirname(args.cache) or "."
+    config = load_config()
+    if args.docx_volume_words is not None:
+        config.docx_volume_words = args.docx_volume_words
+    config = config.validated()
     try:
         themes, transcripts = read_cache(args.cache)
     except (ValueError, OSError) as exc:  # OSError covers FileNotFoundError
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    for path in write_theme_docxs(themes, transcripts, out_dir):
+    for path in write_theme_docxs(themes, transcripts, out_dir, volume_words=config.docx_volume_words):
         print(f"[report:docx] {path}")
 
 

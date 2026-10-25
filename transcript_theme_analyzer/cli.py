@@ -35,7 +35,7 @@ from .loader import SUPPORTED_EXTENSIONS, detect_format, load_transcript_text
 from .pricing import resolve_prices
 from .run_report import write_run_html
 from .themes import Theme, ThemeInputError, build_themes, check_theme_limit, read_themes_file
-from .word_report import write_theme_docxs
+from .word_report import DEFAULT_VOLUME_WORDS, write_theme_docxs
 
 DEFAULT_GLOB_PATTERNS = ["*.txt", "*.docx"]
 
@@ -72,6 +72,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Most themes allowed in one run (default: MAX_THEMES or 5)",
+    )
+    parser.add_argument(
+        "--docx-volume-words",
+        type=int,
+        default=None,
+        help="Excerpt words per Word volume before a theme is split into numbered volumes "
+        "(default: DOCX_VOLUME_WORDS or 150000)",
     )
     parser.add_argument(
         "--models",
@@ -364,7 +371,10 @@ async def run_all(
 
 
 def _write_outputs(
-    themes: list[Theme], raw_by_transcript: dict[str, list[tuple[str, dict]]], out_dir: str
+    themes: list[Theme],
+    raw_by_transcript: dict[str, list[tuple[str, dict]]],
+    out_dir: str,
+    volume_words: int = DEFAULT_VOLUME_WORDS,
 ) -> None:
     if not raw_by_transcript:
         print("No results to report — nothing was analyzed.", file=sys.stderr)
@@ -376,7 +386,7 @@ def _write_outputs(
     html_path = write_run_html(themes, raw_by_transcript, os.path.join(out_dir, "report.html"))
     print(f"[report:html] {html_path}")
 
-    for docx_path in write_theme_docxs(themes, raw_by_transcript, out_dir):
+    for docx_path in write_theme_docxs(themes, raw_by_transcript, out_dir, volume_words=volume_words):
         print(f"[report:docx] {docx_path}")
 
 
@@ -534,7 +544,9 @@ async def run_batch(
             writer.close()
             await client.close()
 
-    write_report_from_results(themes, items, results_by_key, out_dir, total)
+    write_report_from_results(
+        themes, items, results_by_key, out_dir, total, volume_words=config.docx_volume_words
+    )
     return interrupted
 
 
@@ -544,6 +556,7 @@ def write_report_from_results(
     results_by_key: dict[str, tuple[str, list[tuple[str, dict]]]],
     out_dir: str,
     total: int,
+    volume_words: int = DEFAULT_VOLUME_WORDS,
 ) -> None:
     """Emit the report in discovery order rather than completion order, so
     output is deterministic no matter how the concurrency interleaved."""
@@ -555,7 +568,7 @@ def write_report_from_results(
     analyzed = len(raw_by_transcript)
     failed = sum(1 for payloads in raw_by_transcript.values() if has_error(payloads))
     print(f"\n{analyzed}/{total} transcript(s) in report" + (f", {failed} with errors" if failed else ""))
-    _write_outputs(themes, raw_by_transcript, out_dir)
+    _write_outputs(themes, raw_by_transcript, out_dir, volume_words=volume_words)
 
 
 def salvage_report(
@@ -564,6 +577,7 @@ def salvage_report(
     models: list[str],
     out_dir: str,
     base_dir: str | None,
+    volume_words: int = DEFAULT_VOLUME_WORDS,
 ) -> None:
     """Rebuild the report purely from the checkpoint on disk.
 
@@ -579,7 +593,9 @@ def salvage_report(
     if not results_by_key:
         return
     print("\nRebuilding the report from the checkpoint...")
-    write_report_from_results(themes, items, results_by_key, out_dir, len(items))
+    write_report_from_results(
+        themes, items, results_by_key, out_dir, len(items), volume_words=volume_words
+    )
 
 
 def _load_themes(args, config) -> list[Theme]:
@@ -609,6 +625,8 @@ def main(argv: list[str] | None = None) -> None:
         config.max_concurrent_requests = args.max_concurrent_requests
     if args.max_themes is not None:
         config.max_themes = args.max_themes
+    if args.docx_volume_words is not None:
+        config.docx_volume_words = args.docx_volume_words
     config = config.validated()
     themes = _load_themes(args, config)
     models = args.models or [config.default_model]
@@ -648,7 +666,8 @@ def main(argv: list[str] | None = None) -> None:
             # disk, so rebuild the report from there rather than leaving the
             # user with a completed run and no output.
             print("\nInterrupted.", file=sys.stderr)
-            salvage_report(paths, themes, models, args.out_dir, args.transcript_dir)
+            salvage_report(paths, themes, models, args.out_dir, args.transcript_dir,
+                           volume_words=config.docx_volume_words)
             sys.exit(130)
         if interrupted:
             sys.exit(130)
@@ -671,7 +690,8 @@ def main(argv: list[str] | None = None) -> None:
             await client.close()
 
     raw_results = asyncio.run(_single())
-    _write_outputs(themes, {transcript_stem: raw_results}, args.out_dir)
+    _write_outputs(themes, {transcript_stem: raw_results}, args.out_dir,
+                   volume_words=config.docx_volume_words)
 
 
 if __name__ == "__main__":

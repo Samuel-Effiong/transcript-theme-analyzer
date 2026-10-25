@@ -184,7 +184,7 @@ Every CLI run writes these into `--out-dir` (default `results/`):
     charge, else an estimate from prices, else `n/a` — and the estimated
     provider discount, plus a **Per theme** table (est.; see below).
   - Mobile-friendly and light/dark styled.
-- **`docx/<theme_id>.docx`** — one Word document per theme (the id is a slug of
+- **`docx/<theme_id>.docx`** — one Word report per theme (the id is a slug of
   the theme name, e.g. `docx/forgiveness.docx`), the curated excerpt deliverable:
   - **Title** — the theme.
   - **Overview table** listing every transcript and its relevance score, ranked
@@ -197,12 +197,26 @@ Every CLI run writes these into `--out-dir` (default `results/`):
   - **One sub-heading per passage**, a short section-title (2-6 words)
     generated from that passage's own content, with the full continuous
     passage underneath and its timestamp/speaker if known.
+- **`docx/<theme_id>/`** — a theme whose excerpt text exceeds
+  `DOCX_VOLUME_WORDS` (default 150,000 words, about 300 pages) is written as a
+  folder instead of one file, so no document grows past what Word handles:
+  - **`<theme_id>-index.docx`** lists every transcript in the run with its
+    score, passage count and the volume number that holds it, in the same
+    ranked order.
+  - **`<theme_id>-vol-01.docx`, `-vol-02.docx`, …** each repeat the title,
+    carry a `Volume N of M` line and their own linked overview table, then the
+    full sections of the transcripts they hold. Volumes are filled in ranked
+    order (volume 1 holds the strongest transcripts), a transcript is never
+    split across volumes, and nothing is trimmed: every transcript and every
+    passage appears in full exactly as in the single-file layout.
 
 Failed model runs (e.g. a rate limit or timeout) are captured per-model and
 shown as `FAILED`/error rather than crashing either report.
 
 Reusing an `--out-dir` is safe: `docx/` only ever holds the current run's
-themes. A Word file for a theme that is no longer in the run is removed.
+themes. A Word file, or a volume folder, for a theme that is no longer in the
+run (or whose layout changed) is removed; anything else you keep under `docx/`
+is left alone.
 
 ### Cost reporting
 
@@ -230,11 +244,13 @@ re-running the paid analysis) and `.checkpoint.jsonl` (resume state). To rebuild
 
 ```bash
 python -m transcript_theme_analyzer.run_report --cache results/.raw_results.json [--out path.html]
-python -m transcript_theme_analyzer.word_report --cache results/.raw_results.json [--out-dir dir]
+python -m transcript_theme_analyzer.word_report --cache results/.raw_results.json [--out-dir dir] [--docx-volume-words N]
 ```
 
 `run_report` rewrites `report.html` (next to the cache by default); `word_report`
-rewrites `docx/<theme_id>.docx` under `--out-dir` (default: the cache's folder).
+rewrites the Word reports under `--out-dir` (default: the cache's folder) in the
+same single-file or volume layout as the run, honouring `DOCX_VOLUME_WORDS` and
+the `--docx-volume-words` override.
 
 Passage boundaries are fixed at analysis time and only the extracted text is
 cached, so a change to passage extraction (such as the whole-word marker

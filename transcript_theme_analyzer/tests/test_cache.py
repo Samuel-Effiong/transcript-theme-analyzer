@@ -102,3 +102,27 @@ def test_word_report_main_regenerates_every_theme_docx(tmp_path, capsys):
 
     word_report.main(["--cache", path, "--out-dir", str(tmp_path / "other")])
     assert (tmp_path / "other" / "docx" / "glory.docx").exists()
+
+
+def _with_excerpt(payload, words):
+    """make_success() payload whose 'glory' entry carries one excerpt of that many words."""
+    payload["themes"]["glory"]["locations"] = [{"excerpt": " ".join(["w"] * words), "title": "t"}]
+    return payload
+
+
+def test_word_report_main_honours_docx_volume_words(tmp_path, capsys, monkeypatch):
+    transcripts = {f"ep{i}": [("m1", _with_excerpt(make_success(90 - i), 700))] for i in range(2)}
+    path = write_cache(THEMES, transcripts, str(tmp_path))
+
+    monkeypatch.setenv("DOCX_VOLUME_WORDS", "1000")
+    word_report.main(["--cache", path])
+    assert (tmp_path / "docx" / "glory" / "glory-vol-02.docx").exists()
+    assert "glory-index.docx" in capsys.readouterr().out
+
+    word_report.main(["--cache", path, "--docx-volume-words", "5000"])
+    assert (tmp_path / "docx" / "glory.docx").exists()
+    assert not (tmp_path / "docx" / "glory").exists()
+
+    # below the floor clamps to 1000, so the two 700-word transcripts still split
+    word_report.main(["--cache", path, "--docx-volume-words", "1"])
+    assert (tmp_path / "docx" / "glory" / "glory-vol-02.docx").exists()

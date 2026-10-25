@@ -46,6 +46,11 @@ def test_theme_is_repeatable_and_optional():
     assert args.max_themes == 8
 
 
+def test_docx_volume_words_flag_parses_and_defaults_to_none():
+    assert parse_args(["--transcript", "t.txt", "--theme", "G"]).docx_volume_words is None
+    assert parse_args(["--transcript", "t.txt", "--theme", "G", "--docx-volume-words", "2000"]).docx_volume_words == 2000
+
+
 def test_compare_models_rejects_over_limit_themes(tmp_path, monkeypatch, capsys):
     import pytest
 
