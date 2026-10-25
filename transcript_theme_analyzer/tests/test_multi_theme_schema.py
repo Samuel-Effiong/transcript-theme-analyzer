@@ -108,8 +108,12 @@ def test_prompt_v4_content():
     assert "Understanding the Will of God" in p
     # whole-word markers
     assert "complete words" in p
-    # two scored examples plus the absent case
+    # two scored examples plus the absent case; the high example shows several
+    # teaching points, the tangential one still shows a passage
     assert p.count('"relevance_score":') == 3
+    assert p.count('"title":') >= 4
+    # adjacent passages may touch or lightly overlap
+    assert "overlap" in p
     assert '"explicitness": "tangential"' in p
     # the format section states each rule once
     assert p.lower().count("never omit") <= 1

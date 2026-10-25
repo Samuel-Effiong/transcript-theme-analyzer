@@ -58,8 +58,9 @@ as one. A teaching point typically runs one to several paragraphs; a connected a
 that genuinely develops one point across pages stays together.
 - Never split a passage merely to make it shorter, and never shrink a passage to a \
 highlight sentence when the surrounding paragraphs carry the same point.
-- Adjacent teaching points may touch. Together, the passages of a long discussion should \
-cover it, so nothing the speaker said on the theme falls between them.
+- Adjacent teaching points may touch or lightly overlap: the end marker of one may sit at \
+the start of the next. Together, the passages of a long discussion should cover it, so \
+nothing the speaker said on the theme falls between them.
 
 For example, a ten-page discussion of the will of God might be reported as six passages \
 titled "Understanding the Will of God", "How to Discover God's Will", "Aligning Your \
@@ -97,6 +98,18 @@ themes absent from this segment:
           "end_marker": "verbatim phrase from the true end of the passage",
           "timestamp": "[12:03]",
           "speaker": "Speaker"
+        },
+        {
+          "title": "Testing a Sense of Calling",
+          "start_marker": "verbatim phrase from the true start of the next passage",
+          "end_marker": "verbatim phrase from the true end of the next passage",
+          "timestamp": "[19:40]",
+          "speaker": "Speaker"
+        },
+        {
+          "title": "Obedience When the Way Is Unclear",
+          "start_marker": "verbatim phrase from the true start of the third passage",
+          "end_marker": "verbatim phrase from the true end of the third passage"
         }
       ]
     },
@@ -105,7 +118,13 @@ themes absent from this segment:
       "relevance_score": 15,
       "explicitness": "tangential",
       "reasoning": "Suffering is mentioned once as a reason people doubt their calling; it is not developed.",
-      "locations": []
+      "locations": [
+        {
+          "title": "Doubt in Hard Seasons",
+          "start_marker": "verbatim phrase from the true start of the brief mention",
+          "end_marker": "verbatim phrase from the true end of the brief mention"
+        }
+      ]
     },
     {
       "theme_id": "forgiveness",

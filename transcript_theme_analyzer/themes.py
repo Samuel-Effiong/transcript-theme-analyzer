@@ -41,9 +41,12 @@ def _one_line(text: str) -> str:
 
 
 def derive_label(text: str, max_words: int = LABEL_WORDS) -> str:
-    """The first ``max_words`` words of ``text``, trailing punctuation removed."""
-    words = text.split()[:max_words]
-    return " ".join(words).rstrip(_TRAILING_PUNCTUATION)
+    """A text of ``max_words`` words or fewer is its own label. A longer one is
+    cut to its first ``max_words`` words, trailing punctuation removed."""
+    words = text.split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words]).rstrip(_TRAILING_PUNCTUATION)
 
 
 def build_themes(cli_texts: list[str], file_texts: list[str]) -> list[Theme]:

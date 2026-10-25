@@ -103,7 +103,15 @@ def test_derive_label_first_six_words_without_trailing_punctuation():
     assert derive_label(LONG) == "Teachings about God's will for an"
     assert derive_label("will of God") == "will of God"
     assert derive_label("Grace, mercy, and peace to you all,") == "Grace, mercy, and peace to you"
-    assert derive_label("Faith. Hope. Love.") == "Faith. Hope. Love"
+    # six words or fewer: the text is its own label, punctuation and all
+    assert derive_label("Faith. Hope. Love.") == "Faith. Hope. Love."
+    assert derive_label("Grace.") == "Grace."
+
+
+def test_short_theme_with_trailing_punctuation_is_its_own_label():
+    (t,) = build_themes(["Grace."], [])
+    assert t.name == t.text == "Grace."
+    assert t.id == "grace"
 
 
 def test_long_theme_gets_label_and_short_id():

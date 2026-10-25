@@ -585,6 +585,15 @@ def test_short_theme_has_no_text_paragraph(tmp_path):
     assert doc.paragraphs[1].text.startswith("Generated ")
 
 
+def test_short_punctuated_theme_from_build_themes_has_no_text_paragraph(tmp_path):
+    from transcript_theme_analyzer.themes import build_themes
+    (theme,) = build_themes(["Grace."], [])
+    (path,) = write_theme_docxs([theme], _big_run([100], theme_id=theme.id), str(tmp_path))
+    doc = Document(path)
+    assert _headings(doc, 1) == ["Grace."]
+    assert doc.paragraphs[1].text.startswith("Generated ")
+
+
 def test_volume_and_index_carry_the_full_text(tmp_path):
     theme = Theme(id="grace", name="Grace", text="Grace as unmerited favour, not as a reward")
     paths = write_theme_docxs([theme], _big_run([700, 700]), str(tmp_path), volume_words=1000)
